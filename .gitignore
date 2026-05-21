@@ -1,0 +1,28 @@
+# IDEs and Editors
+.vscode/
+.idea/
+*.suo
+*.ntvs*
+*.njsproj
+*.sln
+*.sw?
+
+# General
+.DS_Store
+Thumbs.db
+
+# Any root level envs
+.env
+
+# Any node_modules if accidentally installed at root
+node_modules/
+
+# Any python envs if accidentally created at root
+.venv/
+venv/
+__pycache__/
+
+# Large images / data dumps that shouldn't be committed
+*.log
+*.zip
+*.tar.gz

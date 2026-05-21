@@ -1,0 +1,93 @@
+version: '3.8'
+
+services:
+
+  # ── Zookeeper ─────────────────────────────────────────────
+  zookeeper:
+    image: confluentinc/cp-zookeeper:7.5.0
+    container_name: ecowatch-zookeeper
+    environment:
+      ZOOKEEPER_CLIENT_PORT: 2181
+      ZOOKEEPER_TICK_TIME:   2000
+    networks: [ecowatch-net]
+
+  # ── Kafka ─────────────────────────────────────────────────
+  kafka:
+    image: confluentinc/cp-kafka:7.5.0
+    container_name: ecowatch-kafka
+    depends_on: [zookeeper]
+    ports:
+      - "9092:9092"   # Host access
+      - "29092:29092" # Internal Docker access
+    environment:
+      KAFKA_BROKER_ID:                        1
+      KAFKA_ZOOKEEPER_CONNECT:                zookeeper:2181
+      # FIX: Alag ports on alag listeners!
+      KAFKA_ADVERTISED_LISTENERS:             PLAINTEXT://kafka:29092,PLAINTEXT_HOST://localhost:9092
+      KAFKA_LISTENER_SECURITY_PROTOCOL_MAP:   PLAINTEXT:PLAINTEXT,PLAINTEXT_HOST:PLAINTEXT
+      KAFKA_LISTENERS:                        PLAINTEXT://0.0.0.0:29092,PLAINTEXT_HOST://0.0.0.0:9092
+      KAFKA_INTER_BROKER_LISTENER_NAME:       PLAINTEXT
+      KAFKA_OFFSETS_TOPIC_REPLICATION_FACTOR: 1
+      KAFKA_AUTO_CREATE_TOPICS_ENABLE:        "true"
+      # 3 partitions → 3 ML replicas parallel mein kaam kar sakein!
+      KAFKA_NUM_PARTITIONS:                   1
+    healthcheck:
+      test: ["CMD", "kafka-topics", "--bootstrap-server", "localhost:9092", "--list"]
+      interval: 10s
+      timeout: 10s
+      retries: 10
+    networks: [ecowatch-net]
+
+  # ── MongoDB ───────────────────────────────────────────────
+  mongodb:
+    image: mongo:7
+    container_name: ecowatch-mongodb
+    ports:
+      - "27017:27017"
+    volumes:
+      - mongo-data:/data/db
+    healthcheck:
+      test: ["CMD", "mongosh", "--eval", "db.adminCommand('ping')"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+    networks: [ecowatch-net]
+
+  # ML Service locally run hoga — Windows pe, GTX 1650 GPU ke saath!
+  # Command: cd ml-service && .venv\Scripts\activate && uvicorn api.app:app --host 0.0.0.0 --port 8001
+
+  # ── Node.js API Service ───────────────────────────────────
+  node-service:
+    build: ./node-service
+    container_name: ecowatch-node
+    depends_on:
+      kafka:
+        condition: service_healthy
+      mongodb:
+        condition: service_healthy
+    ports:
+      - "5000:5000"
+    environment:
+      PORT:                "5000"
+      MONGO_URI:           mongodb://mongodb:27017/ecowatch
+      JWT_SECRET:          ecowatch_production_secret_change_me
+      JWT_EXPIRE:          7d
+      KAFKA_BROKER:        kafka:29092   # Internal Docker port!
+      KAFKA_GROUP:         node-consumers
+      KAFKA_TOPIC_PRODUCE: scan-jobs
+      KAFKA_TOPIC_CONSUME: scan-results
+      SMTP_HOST:           smtp.gmail.com
+      SMTP_PORT:           "587"
+      SMTP_USER:           ${SMTP_USER:-}
+      SMTP_PASS:           ${SMTP_PASS:-}
+      UPLOAD_DIR:          uploads/
+    restart: on-failure
+    networks: [ecowatch-net]
+
+volumes:
+  mongo-data:
+
+# ── Network ───────────────────────────────────────────────────
+networks:
+  ecowatch-net:
+    driver: bridge

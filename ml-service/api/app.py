@@ -1,0 +1,90 @@
+"""
+FastAPI Application
+--------------------
+Entry point for the EcoWatch ML Service.
+Kafka consumer background thread mein chalega.
+
+Pipeline: Sentinel Hub (RGB+NIR) → NDVI + Qwen2-VL → scan-results
+
+Run:
+  uvicorn api.app:app --host 0.0.0.0 --port 8001
+"""
+
+import os
+import threading
+from contextlib import asynccontextmanager
+from fastapi import FastAPI
+
+from api.routes import router
+from src.inference import vl_analyzer
+from src.utils.logger  import get_logger
+from src.utils.cleanup import start_cleanup_service, get_disk_stats, cleanup_old_images
+
+logger = get_logger("app")
+
+
+def _start_kafka_consumer():
+    """Kafka consumer ko background thread mein chalao."""
+    try:
+        from streaming.consumer import ScanJobConsumer
+        broker   = os.getenv("KAFKA_BROKER", "localhost:9092")
+        group_id = os.getenv("KAFKA_GROUP",  "ml-workers")
+        consumer = ScanJobConsumer(broker=broker, group_id=group_id)
+        consumer.start()
+    except Exception as e:
+        logger.error(f"Kafka consumer failed: {e}")
+
+
+# ── Startup / Shutdown ────────────────────────────────────────
+@asynccontextmanager
+async def lifespan(app: FastAPI):
+    # STARTUP
+    logger.info("Starting EcoWatch ML Service...")
+    logger.info("Loading Qwen2-VL-2B-Instruct model...")
+
+    try:
+        vl_analyzer.load_model()   # Qwen2-VL load karo (GPU/CPU auto-detect)
+        logger.info("Qwen2-VL model loaded successfully!")
+    except Exception as e:
+        logger.error(f"Failed to load Qwen2-VL model: {e}")
+        raise
+
+    # Kafka Consumer — background thread mein start karo
+    consumer_thread = threading.Thread(
+        target = _start_kafka_consumer,
+        daemon = True,
+        name   = "kafka-consumer"
+    )
+    consumer_thread.start()
+    logger.info("Kafka consumer thread started!")
+
+    # Image Cleanup Service — raat 3 baje daily
+    start_cleanup_service()
+
+    yield  # App is running
+
+    # SHUTDOWN
+    logger.info("Shutting down EcoWatch ML Service...")
+
+
+# ── FastAPI App ───────────────────────────────────────────────
+app = FastAPI(
+    title       = "EcoWatch ML Service",
+    description = "Satellite environmental monitoring — NDVI + Qwen2-VL analysis",
+    version     = "2.0.0",
+    lifespan    = lifespan
+)
+
+app.include_router(router, prefix="/api")
+
+
+# ── Root ──────────────────────────────────────────────────────
+@app.get("/")
+def root():
+    return {
+        "service": "EcoWatch ML Service",
+        "version": "2.0.0",
+        "model":   "Qwen/Qwen2-VL-2B-Instruct + NDVI",
+        "docs":    "/docs",
+        "health":  "/api/health"
+    }
