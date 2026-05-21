@@ -1,0 +1,36 @@
+@import "tailwindcss";
+
+@theme {
+  --color-obsidian: #020617;
+  --color-obsidian-light: #0f172a;
+  --color-emerald-neon: #10b981;
+  --color-emerald-dark: #064e3b;
+  --color-cyber-cyan: #06b6d4;
+  
+  --animate-shimmer: shimmer 1.5s infinite;
+  
+  @keyframes shimmer {
+    100% {
+      transform: translateX(100%);
+    }
+  }
+}
+
+@layer base {
+  :root {
+    --background: #020617;
+    --foreground: #f8fafc;
+  }
+}
+
+@layer base {
+  body {
+    background-color: var(--background);
+    color: var(--foreground);
+    font-feature-settings: "rlig" 1, "calt" 1;
+    background-image: 
+      radial-gradient(circle at 50% -20%, rgba(16, 185, 129, 0.15), transparent 40%),
+      linear-gradient(to bottom, transparent, rgba(2, 6, 23, 1));
+    min-height: 100vh;
+  }
+}
