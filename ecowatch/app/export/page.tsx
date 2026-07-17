@@ -14,6 +14,7 @@ import { ZoneExportList } from "@/components/export/ZoneExportList";
 export default function DataExportCenter() {
   const [zones, setZones] = useState<Zone[]>([]);
   const [isLoading, setIsLoading] = useState(true);
+  const [searchQuery, setSearchQuery] = useState("");
 
   useEffect(() => {
     const fetchZones = async () => {
@@ -73,8 +74,19 @@ export default function DataExportCenter() {
                   <p className="text-[10px] font-mono text-zinc-500 uppercase tracking-widest">Download History & Boundaries per Zone</p>
                 </div>
                 <span className="text-xs font-mono bg-white/5 px-3 py-1 rounded text-cyan-500 border border-white/5">
-                  {zones.length} Active Zones
+                  {zones.filter(z => z.name.toLowerCase().includes(searchQuery.toLowerCase())).length} Matching Zones
                 </span>
+              </div>
+
+              {/* Search Bar */}
+              <div className="mb-4 z-10 relative">
+                <input
+                  type="text"
+                  placeholder="Search zones by name..."
+                  value={searchQuery}
+                  onChange={(e) => setSearchQuery(e.target.value)}
+                  className="w-full bg-black/40 border border-white/10 rounded-xl px-4 py-3 text-sm text-white placeholder-zinc-500 focus:outline-none focus:border-cyan-500/50 transition-colors font-mono shadow-[inset_0_2px_4px_rgba(0,0,0,0.3)] focus:shadow-[0_0_15px_rgba(6,182,212,0.1)]"
+                />
               </div>
 
               {/* The Virtualized List */}
@@ -84,7 +96,9 @@ export default function DataExportCenter() {
                     <span className="w-8 h-8 border-2 border-cyan-500 border-t-transparent rounded-full animate-spin" />
                   </div>
                 ) : (
-                  <ZoneExportList zones={zones} />
+                  <ZoneExportList 
+                    zones={zones.filter(z => z.name.toLowerCase().includes(searchQuery.toLowerCase()))} 
+                  />
                 )}
               </div>
 

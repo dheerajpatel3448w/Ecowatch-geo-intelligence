@@ -344,7 +344,7 @@ export default function HistoricalPage() {
   const [zones,  setZones]  = useState<Zone[]>([]);
   const [zoneId, setZoneId] = useState("");
   const [selectedDates, setSelectedDates] = useState<string[]>([]);
-  const [resolution,    setResolution]    = useState(20);
+  const [resolution,    setResolution]    = useState(10);
   const [result, setResult] = useState<HistoricalResult | null>(null);
   const [error,  setError]  = useState("");
   const [saving, setSaving] = useState(false);

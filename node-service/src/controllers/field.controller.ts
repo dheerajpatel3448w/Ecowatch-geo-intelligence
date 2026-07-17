@@ -10,10 +10,11 @@ import path           from 'path';
 import axios          from 'axios';
 import fs             from 'fs';
 import FieldReport    from '../models/FieldReport';
+import Alert          from '../models/Alert';
 import Zone           from '../models/Zone';
 import { AuthRequest } from '../middleware/auth.middleware';
 import env            from '../config/env';
-import { broadcastFieldReport } from '../utils/socket';
+import { broadcastFieldReport, broadcastAlert } from '../utils/socket';
 
 const ML_SERVICE_URL = process.env.ML_SERVICE_URL || 'http://localhost:8001';
 
@@ -64,6 +65,38 @@ export const submitFieldReport = async (req: AuthRequest, res: Response): Promis
             confidence:  mlRes.data.confidence  ?? 'low',
           },
         });
+
+        // ── AUTO-ALERT: HIGH ya CRITICAL severity par alert create ──────────
+        const sev = (mlRes.data.severity ?? 'none').toLowerCase();
+        if (sev === 'high' || sev === 'critical') {
+          try {
+            const alert = await Alert.create({
+              zoneId:        zoneId,
+              source:        'field_report',
+              fieldReportId: report._id,
+              scanId:        null,
+              forestLoss:    0,
+              severity:      sev.toUpperCase() as 'HIGH' | 'CRITICAL',
+              message:       `Field Officer Alert: ${(mlRes.data.threats ?? []).filter((t: string) => t !== 'none').join(', ') || 'Threat detected'} at ${zone.name} (GPS: ${lat}, ${lng})`,
+              changeType:    mlRes.data.threats?.[0] ?? 'field_report',
+              probableCause: mlRes.data.description ?? '',
+              changeDescription: mlRes.data.description ?? '',
+              hotspot:       { lat: parseFloat(lat) || 0, lng: parseFloat(lng) || 0 },
+            });
+
+            // Real-time broadcast to Monitoring + Legal pages
+            broadcastAlert({
+              ...alert.toObject(),
+              zoneName: zone.name,
+              source:   'field_report',
+            });
+
+            console.log(`[Field] AUTO-ALERT created | zone=${zone.name} | severity=${sev.toUpperCase()} | id=${alert._id}`);
+          } catch (alertErr) {
+            console.error('[Field] Auto-alert creation failed:', alertErr);
+            // Alert failure should NOT block the field report response
+          }
+        }
       }
     } catch (mlErr: any) {
       console.error('ML field analysis failed:', mlErr?.message);

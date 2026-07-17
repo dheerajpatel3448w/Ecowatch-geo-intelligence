@@ -23,6 +23,17 @@ const downloadBlob = (blob: Blob, filename: string) => {
 
 export const reportsService = {
   
+  // ── STATS ──────────────────────────────────────────────────────────────────
+  getZoneExportStats: async (zoneId: string) => {
+    try {
+      const res = await fetch(`${API_URL}/export/zone/${zoneId}/stats`, { headers: getHeaders() });
+      const data = await res.json();
+      return data.success ? data.data : null;
+    } catch {
+      return null;
+    }
+  },
+
   // ── RAW DATA EXPORTS (CSV) ──────────────────────────────────────────────────
 
   exportZoneScansCSV: async (zoneId: string, zoneName: string): Promise<boolean> => {
@@ -49,6 +60,58 @@ export const reportsService = {
       return true;
     } catch (error) {
       console.error("Error exporting Alerts CSV:", error);
+      return false;
+    }
+  },
+
+  exportZoneHistoricalCSV: async (zoneId: string, zoneName: string): Promise<boolean> => {
+    try {
+      const res = await fetch(`${API_URL}/export/zone/${zoneId}/historical/csv`, { headers: getHeaders() });
+      if (!res.ok) throw new Error("Failed to download CSV");
+      const blob = await res.blob();
+      downloadBlob(blob, `EcoWatch_${zoneName.replace(/\s+/g, "_")}_Historical.csv`);
+      return true;
+    } catch (error) {
+      console.error("Error exporting Zone Historical CSV:", error);
+      return false;
+    }
+  },
+
+  exportZoneFieldReportsCSV: async (zoneId: string, zoneName: string): Promise<boolean> => {
+    try {
+      const res = await fetch(`${API_URL}/export/zone/${zoneId}/field/csv`, { headers: getHeaders() });
+      if (!res.ok) throw new Error("Failed to download CSV");
+      const blob = await res.blob();
+      downloadBlob(blob, `EcoWatch_${zoneName.replace(/\s+/g, "_")}_FieldReports.csv`);
+      return true;
+    } catch (error) {
+      console.error("Error exporting Zone Field Reports CSV:", error);
+      return false;
+    }
+  },
+
+  exportAllHistoricalCSV: async (): Promise<boolean> => {
+    try {
+      const res = await fetch(`${API_URL}/export/historical/csv`, { headers: getHeaders() });
+      if (!res.ok) throw new Error("Failed to download CSV");
+      const blob = await res.blob();
+      downloadBlob(blob, "EcoWatch_All_Historical.csv");
+      return true;
+    } catch (error) {
+      console.error("Error exporting All Historical CSV:", error);
+      return false;
+    }
+  },
+
+  exportAllFieldReportsCSV: async (): Promise<boolean> => {
+    try {
+      const res = await fetch(`${API_URL}/export/field/csv`, { headers: getHeaders() });
+      if (!res.ok) throw new Error("Failed to download CSV");
+      const blob = await res.blob();
+      downloadBlob(blob, "EcoWatch_All_FieldReports.csv");
+      return true;
+    } catch (error) {
+      console.error("Error exporting All Field Reports CSV:", error);
       return false;
     }
   },

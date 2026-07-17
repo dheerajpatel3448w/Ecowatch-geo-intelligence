@@ -3,7 +3,7 @@
 import { useRef, useState } from "react";
 import { motion } from "framer-motion";
 import { useMouse } from "react-use";
-import { FileSpreadsheet, Map, Download, Loader2 } from "lucide-react";
+import { FileSpreadsheet, Map, Download, Loader2, BarChart3, ShieldAlert } from "lucide-react";
 import { reportsService } from "@/lib/api/reports";
 import { toast } from "sonner";
 import confetti from "canvas-confetti";
@@ -105,11 +105,34 @@ export function GlobalExportCards() {
           title="Global Planetary Map"
           subtitle="Download the entire network of monitored zones and their associated risk parameters as a standardized GeoJSON file. Designed for direct import into ArcGIS, QGIS, or custom geospatial engines."
           icon={Map}
-          colorClass="bg-emerald-500/10 text-emerald-400 border border-emerald-500/20"
+          colorClass="bg-indigo-500/10 text-indigo-400 border border-indigo-500/20"
           type="GEOJSON"
           onDownload={() => reportsService.exportAllZonesGeoJSON()}
         />
       </div>
+
+      <div className="flex-1">
+        <ExportCard
+          title="Historical NDVI Timeline"
+          subtitle="Download complete multi-temporal Sentinel-2 NDVI analysis data across all zones. Includes forest %, cloud masking %, severity, and loss timeline for ML research."
+          icon={BarChart3}
+          colorClass="bg-blue-500/10 text-blue-400 border border-blue-500/20"
+          type="CSV"
+          onDownload={() => reportsService.exportAllHistoricalCSV()}
+        />
+      </div>
+
+      <div className="flex-1">
+        <ExportCard
+          title="Ground Intelligence Log"
+          subtitle="Download all field officer ground truth reports with GPS coordinates, Qwen2-VL threat analysis, severity classification, and AI descriptions."
+          icon={ShieldAlert}
+          colorClass="bg-orange-500/10 text-orange-400 border border-orange-500/20"
+          type="CSV"
+          onDownload={() => reportsService.exportAllFieldReportsCSV()}
+        />
+      </div>
+
 
     </div>
   );

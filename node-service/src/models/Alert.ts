@@ -1,9 +1,11 @@
 import mongoose, { Document, Schema } from 'mongoose';
 
 export interface IAlert extends Document {
-  zoneId:     mongoose.Types.ObjectId;
-  scanId:     mongoose.Types.ObjectId;
+  zoneId:           mongoose.Types.ObjectId;
+  scanId:           mongoose.Types.ObjectId | null;   // optional — field reports have no scanId
   prevScanId:       mongoose.Types.ObjectId | null;
+  source:           'satellite' | 'field_report';     // alert ka origin
+  fieldReportId:    mongoose.Types.ObjectId | null;   // set when source = 'field_report'
   forestLoss:       number;
   bareSoilIncrease: number;
   waterLoss:        number;
@@ -17,7 +19,7 @@ export interface IAlert extends Document {
   resolvedBy?:      mongoose.Types.ObjectId;
   resolvedAt?:      Date;
 
-  // Qwen comparison fields (NDVI threat confirm hone ke baad populate hote hain)
+  // Qwen comparison fields
   changeType:           string;
   probableCause:        string;
   changedAreas:         string[];
@@ -27,10 +29,12 @@ export interface IAlert extends Document {
 }
 
 const AlertSchema = new Schema<IAlert>({
-  zoneId:     { type: Schema.Types.ObjectId, ref: 'Zone', required: true },
-  scanId:           { type: Schema.Types.ObjectId, ref: 'Scan', required: true },
-  prevScanId:       { type: Schema.Types.ObjectId, ref: 'Scan', default: null },
-  forestLoss:       { type: Number, required: true },
+  zoneId:           { type: Schema.Types.ObjectId, ref: 'Zone',        required: true },
+  scanId:           { type: Schema.Types.ObjectId, ref: 'Scan',        required: false, default: null },
+  prevScanId:       { type: Schema.Types.ObjectId, ref: 'Scan',        default: null },
+  source:           { type: String, enum: ['satellite', 'field_report'], default: 'satellite' },
+  fieldReportId:    { type: Schema.Types.ObjectId, ref: 'FieldReport', default: null },
+  forestLoss:       { type: Number, default: 0 },
   bareSoilIncrease: { type: Number, default: 0 },
   waterLoss:        { type: Number, default: 0 },
   severity: {

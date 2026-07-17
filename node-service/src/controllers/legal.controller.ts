@@ -16,6 +16,7 @@ import PDFDocument        from 'pdfkit';
 import Scan               from '../models/Scan';
 import Zone               from '../models/Zone';
 import Alert              from '../models/Alert';
+import FieldReport        from '../models/FieldReport';
 import HistoricalAnalysis, { IHistoricalScan } from '../models/HistoricalAnalysis';
 import { AuthRequest }    from '../middleware/auth.middleware';
 
@@ -274,9 +275,11 @@ export const downloadFIRReport = async (req: AuthRequest, res: Response): Promis
     if (!zone) { res.status(404).json({ success: false, message: 'Zone not found' }); return; }
 
     // ── Data sources ─────────────────────────────────────────────────────────
-    const [hist, alerts] = await Promise.all([
+    const [hist, alerts, fieldReports] = await Promise.all([
       getHistoricalData(req.params.id),
       Alert.find({ zoneId: req.params.id }).sort({ createdAt: -1 }).limit(10),
+      FieldReport.find({ zoneId: req.params.id, status: 'analyzed' })
+                 .sort({ createdAt: -1 }).limit(5),
     ]);
 
     // Fallback scan data
@@ -449,10 +452,48 @@ export const downloadFIRReport = async (req: AuthRequest, res: Response): Promis
       if (doc.y > 650) doc.addPage();
       section('5. OFFICIAL ALERT HISTORY');
       alerts.forEach((a, i) => {
+        const srcBadge = (a as any).source === 'field_report' ? ' [GROUND INTEL]' : ' [SATELLITE]';
         doc.fontSize(8).font('Helvetica-Bold').fillColor(RED)
-           .text(`  Alert ${i + 1}: [${a.severity}] — ${new Date(a.createdAt).toLocaleDateString('en-IN')}`, 65);
+           .text(`  Alert ${i + 1}: [${a.severity}]${srcBadge} — ${new Date(a.createdAt).toLocaleDateString('en-IN')}`, 65);
         doc.fontSize(7.5).font('Helvetica').fillColor(DARK).text(`  ${a.message}`, 75);
         doc.moveDown(0.2);
+      });
+    }
+
+    // ── SECTION 5.5: GROUND INTELLIGENCE REPORTS ──────────────────────────────
+    if (fieldReports.length > 0) {
+      if (doc.y > 650) doc.addPage();
+      section('5.5. GROUND INTELLIGENCE REPORTS (Field Officer Verified)');
+      fieldReports.forEach((fr, i) => {
+        const sev     = (fr.aiAnalysis?.severity ?? 'N/A').toUpperCase();
+        const threats = (fr.aiAnalysis?.threats ?? []).filter((t: string) => t !== 'none').join(', ') || 'None';
+        const isCritical = sev === 'HIGH' || sev === 'CRITICAL';
+
+        doc.fontSize(8).font('Helvetica-Bold').fillColor(isCritical ? RED : DARK)
+           .text(
+             `  Report ${i + 1}: [${sev}] — ` +
+             `${new Date(fr.createdAt).toLocaleDateString('en-IN', { day: '2-digit', month: 'long', year: 'numeric' })}`,
+             65,
+           );
+        doc.fontSize(7.5).font('Helvetica').fillColor(DARK)
+           .text(`  Field Officer: ${fr.reporterName}`, 75);
+        doc.fontSize(7.5).font('Helvetica').fillColor(DARK)
+           .text(`  GPS Location: ${fr.gps.lat.toFixed(5)}°N, ${fr.gps.lng.toFixed(5)}°E`, 75);
+        doc.fontSize(7.5).font('Helvetica').fillColor(DARK)
+           .text(`  Threats Identified: ${threats}`, 75);
+        if (fr.notes) {
+          doc.fontSize(7.5).font('Helvetica').fillColor(GRAY)
+             .text(`  Field Notes: "${fr.notes}"`, 75);
+        }
+        if (fr.aiAnalysis?.description) {
+          doc.fontSize(7.5).font('Helvetica').fillColor(GRAY)
+             .text(`  Qwen2-VL Analysis: ${fr.aiAnalysis.description}`, 75, doc.y, { width: doc.page.width - 150 });
+        }
+        doc.moveDown(0.4);
+        if (i < fieldReports.length - 1) {
+          doc.moveTo(75, doc.y).lineTo(doc.page.width - 75, doc.y).lineWidth(0.5).stroke('#333');
+          doc.moveDown(0.3);
+        }
       });
     }
 

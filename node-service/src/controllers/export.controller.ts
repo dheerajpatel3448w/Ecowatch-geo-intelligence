@@ -1,15 +1,22 @@
 /**
  * Export Controller
  * -----------------
- * GET /api/export/zone/:id/csv  → Export scan history to CSV
- * GET /api/export/alerts/csv    → Export all alerts to CSV
+ * GET /api/export/zone/:id/csv              → Scan history CSV
+ * GET /api/export/alerts/csv               → All alerts CSV
+ * GET /api/export/zone/:id/stats           → Zone record counts
+ * GET /api/export/zone/:id/historical/csv  → Historical NDVI timeline CSV
+ * GET /api/export/zone/:id/field/csv       → Field reports CSV
+ * GET /api/export/historical/csv           → All zones historical CSV
+ * GET /api/export/field/csv               → All zones field reports CSV
  */
 
-import { Response } from 'express';
-import { AuthRequest } from '../middleware/auth.middleware';
-import Zone from '../models/Zone';
-import Scan from '../models/Scan';
-import Alert from '../models/Alert';
+import { Response }        from 'express';
+import { AuthRequest }     from '../middleware/auth.middleware';
+import Zone                from '../models/Zone';
+import Scan                from '../models/Scan';
+import Alert               from '../models/Alert';
+import HistoricalAnalysis  from '../models/HistoricalAnalysis';
+import FieldReport         from '../models/FieldReport';
 
 // Helper to escape CSV strings
 const escapeCSV = (field: any): string => {
@@ -105,6 +112,176 @@ export const exportAlertsCSV = async (req: AuthRequest, res: Response): Promise<
     res.setHeader('Content-Disposition', `attachment; filename="EcoWatch_All_Alerts.csv"`);
     res.send(csvContent);
 
+  } catch (err) {
+    if (!res.headersSent) res.status(500).json({ success: false, error: String(err) });
+  }
+};
+
+// ── GET /api/export/zone/:id/stats ───────────────────────────────────────────
+export const getZoneExportStats = async (req: AuthRequest, res: Response): Promise<void> => {
+  try {
+    const zoneId = req.params.id;
+    const [scanCount, alertCount, fieldCount, histCount] = await Promise.all([
+      Scan.countDocuments({ zoneId, status: 'completed' }),
+      Alert.countDocuments({ zoneId }),
+      FieldReport.countDocuments({ zoneId }),
+      HistoricalAnalysis.countDocuments({ zoneId }),
+    ]);
+    res.json({ success: true, data: { scanCount, alertCount, fieldCount, histCount } });
+  } catch (err) {
+    res.status(500).json({ success: false, error: String(err) });
+  }
+};
+
+// ── GET /api/export/zone/:id/historical/csv ──────────────────────────────────
+export const exportZoneHistoricalCSV = async (req: AuthRequest, res: Response): Promise<void> => {
+  try {
+    const zone = await Zone.findById(req.params.id);
+    if (!zone) { res.status(404).json({ success: false, message: 'Zone not found' }); return; }
+
+    const analyses = await HistoricalAnalysis.find({ zoneId: req.params.id }).sort({ createdAt: -1 });
+
+    const headers = [
+      'Analysis Date', 'Scan Date', 'Status', 'Forest %', 'Vegetation %',
+      'Bare Soil %', 'Water %', 'NDVI Mean', 'Cloud Masked %',
+      'Threats', 'Severity', 'Delta from Baseline %', 'Description'
+    ];
+
+    const rows: string[] = [];
+    analyses.forEach((a: any) => {
+      (a.scans || []).forEach((s: any) => {
+        rows.push([
+          new Date(a.createdAt).toISOString().split('T')[0],
+          s.date || '',
+          s.status || '',
+          (s.forest_pct ?? 0).toFixed(2),
+          (s.vegetation_pct ?? 0).toFixed(2),
+          (s.bare_soil_pct ?? 0).toFixed(2),
+          (s.water_pct ?? 0).toFixed(2),
+          (s.ndvi_mean ?? 0).toFixed(4),
+          (s.cloud_pct ?? 0).toFixed(1),
+          escapeCSV((s.threats || []).filter((t: string) => t !== 'none').join(', ')),
+          s.severity || 'none',
+          (s.delta_from_first ?? 0).toFixed(2),
+          escapeCSV(s.description || ''),
+        ].join(','));
+      });
+    });
+
+    const csv = [headers.join(','), ...rows].join('\n');
+    res.setHeader('Content-Type', 'text/csv');
+    res.setHeader('Content-Disposition', `attachment; filename="EcoWatch_${zone.name.replace(/\s+/g, '_')}_Historical.csv"`);
+    res.send(csv);
+  } catch (err) {
+    if (!res.headersSent) res.status(500).json({ success: false, error: String(err) });
+  }
+};
+
+// ── GET /api/export/zone/:id/field/csv ──────────────────────────────────────
+export const exportZoneFieldReportsCSV = async (req: AuthRequest, res: Response): Promise<void> => {
+  try {
+    const zone = await Zone.findById(req.params.id);
+    if (!zone) { res.status(404).json({ success: false, message: 'Zone not found' }); return; }
+
+    const reports = await FieldReport.find({ zoneId: req.params.id }).sort({ createdAt: -1 });
+
+    const headers = [
+      'Report Date', 'Reporter', 'GPS Lat', 'GPS Lng',
+      'Status', 'AI Severity', 'AI Threats', 'AI Confidence', 'Field Notes', 'AI Description'
+    ];
+
+    const rows = reports.map((r: any) => [
+      new Date(r.createdAt).toISOString().split('T')[0],
+      escapeCSV(r.reporterName || ''),
+      r.gps?.lat?.toFixed(6) || '0',
+      r.gps?.lng?.toFixed(6) || '0',
+      r.status || 'pending',
+      r.aiAnalysis?.severity || 'pending',
+      escapeCSV((r.aiAnalysis?.threats || []).filter((t: string) => t !== 'none').join(', ')),
+      r.aiAnalysis?.confidence || 'N/A',
+      escapeCSV(r.notes || ''),
+      escapeCSV(r.aiAnalysis?.description || ''),
+    ].join(','));
+
+    const csv = [headers.join(','), ...rows].join('\n');
+    res.setHeader('Content-Type', 'text/csv');
+    res.setHeader('Content-Disposition', `attachment; filename="EcoWatch_${zone.name.replace(/\s+/g, '_')}_FieldReports.csv"`);
+    res.send(csv);
+  } catch (err) {
+    if (!res.headersSent) res.status(500).json({ success: false, error: String(err) });
+  }
+};
+
+// ── GET /api/export/historical/csv  (ALL zones) ──────────────────────────────
+export const exportAllHistoricalCSV = async (req: AuthRequest, res: Response): Promise<void> => {
+  try {
+    const analyses = await HistoricalAnalysis.find().populate('zoneId', 'name').sort({ createdAt: -1 });
+
+    const headers = [
+      'Zone Name', 'Analysis Date', 'Scan Date', 'Status', 'Forest %',
+      'Vegetation %', 'Bare Soil %', 'Water %', 'NDVI Mean', 'Cloud %',
+      'Threats', 'Severity', 'Delta %'
+    ];
+
+    const rows: string[] = [];
+    analyses.forEach((a: any) => {
+      const zoneName = a.zoneId?.name || 'Unknown';
+      (a.scans || []).forEach((s: any) => {
+        rows.push([
+          escapeCSV(zoneName),
+          new Date(a.createdAt).toISOString().split('T')[0],
+          s.date || '',
+          s.status || '',
+          (s.forest_pct ?? 0).toFixed(2),
+          (s.vegetation_pct ?? 0).toFixed(2),
+          (s.bare_soil_pct ?? 0).toFixed(2),
+          (s.water_pct ?? 0).toFixed(2),
+          (s.ndvi_mean ?? 0).toFixed(4),
+          (s.cloud_pct ?? 0).toFixed(1),
+          escapeCSV((s.threats || []).filter((t: string) => t !== 'none').join(', ')),
+          s.severity || 'none',
+          (s.delta_from_first ?? 0).toFixed(2),
+        ].join(','));
+      });
+    });
+
+    const csv = [headers.join(','), ...rows].join('\n');
+    res.setHeader('Content-Type', 'text/csv');
+    res.setHeader('Content-Disposition', 'attachment; filename="EcoWatch_All_Historical.csv"');
+    res.send(csv);
+  } catch (err) {
+    if (!res.headersSent) res.status(500).json({ success: false, error: String(err) });
+  }
+};
+
+// ── GET /api/export/field/csv  (ALL zones) ───────────────────────────────────
+export const exportAllFieldReportsCSV = async (req: AuthRequest, res: Response): Promise<void> => {
+  try {
+    const reports = await FieldReport.find().populate('zoneId', 'name').sort({ createdAt: -1 });
+
+    const headers = [
+      'Zone Name', 'Report Date', 'Reporter', 'GPS Lat', 'GPS Lng',
+      'Status', 'AI Severity', 'AI Threats', 'AI Confidence', 'Field Notes', 'AI Description'
+    ];
+
+    const rows = reports.map((r: any) => [
+      escapeCSV(r.zoneId?.name || 'Unknown'),
+      new Date(r.createdAt).toISOString().split('T')[0],
+      escapeCSV(r.reporterName || ''),
+      r.gps?.lat?.toFixed(6) || '0',
+      r.gps?.lng?.toFixed(6) || '0',
+      r.status || 'pending',
+      r.aiAnalysis?.severity || 'pending',
+      escapeCSV((r.aiAnalysis?.threats || []).filter((t: string) => t !== 'none').join(', ')),
+      r.aiAnalysis?.confidence || 'N/A',
+      escapeCSV(r.notes || ''),
+      escapeCSV(r.aiAnalysis?.description || ''),
+    ].join(','));
+
+    const csv = [headers.join(','), ...rows].join('\n');
+    res.setHeader('Content-Type', 'text/csv');
+    res.setHeader('Content-Disposition', 'attachment; filename="EcoWatch_All_FieldReports.csv"');
+    res.send(csv);
   } catch (err) {
     if (!res.headersSent) res.status(500).json({ success: false, error: String(err) });
   }

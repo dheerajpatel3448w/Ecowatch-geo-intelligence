@@ -2,7 +2,7 @@
 
 import { useState, useEffect, useRef } from "react";
 import { motion, AnimatePresence } from "framer-motion";
-import { Camera, MapPin, UploadCloud, Crosshair, ShieldAlert, AlertTriangle, CheckCircle2, Info, WifiOff } from "lucide-react";
+import { Camera, MapPin, UploadCloud, Crosshair, ShieldAlert, AlertTriangle, CheckCircle2, Info, WifiOff, Satellite } from "lucide-react";
 import { useForm, Controller } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
 import * as z from "zod";
@@ -15,6 +15,7 @@ import { io } from "socket.io-client";
 
 import { fieldService } from "@/lib/api/field";
 import { zonesService } from "@/lib/api/zones";
+import { historicalSaveService } from "@/lib/api/campaigns";
 import { FieldReport } from "@/types/field.types";
 import { Zone } from "@/types/zone.types";
 import { FieldBackground } from "@/components/ui/FieldBackground";
@@ -32,14 +33,21 @@ const fieldReportSchema = z.object({
 type FieldReportForm = z.infer<typeof fieldReportSchema>;
 
 export default function FieldOperationsPage() {
-  const [zones, setZones] = useState<Zone[]>([]);
+  const [zones,   setZones]   = useState<Zone[]>([]);
   const [reports, setReports] = useState<FieldReport[]>([]);
+
+  // Severity filter for right panel
+  const [severityFilter, setSeverityFilter] = useState<string>("ALL");
+
+  // Cache: zone satellite images (lazy loaded per report)
+  const [zoneLatestImages, setZoneLatestImages] = useState<Record<string, string>>({});
+  const fetchingZones = useRef<Set<string>>(new Set()); // prevent duplicate fetches
   
   // Custom States for Media & GPS
-  const [photo, setPhoto] = useState<File | null>(null);
+  const [photo,        setPhoto]        = useState<File | null>(null);
   const [photoPreview, setPhotoPreview] = useState<string | null>(null);
-  const [manualLat, setManualLat] = useState<number | null>(null);
-  const [manualLng, setManualLng] = useState<number | null>(null);
+  const [manualLat,    setManualLat]    = useState<number | null>(null);
+  const [manualLng,    setManualLng]    = useState<number | null>(null);
   
   const fileInputRef = useRef<HTMLInputElement>(null);
   const [isMounted, setIsMounted] = useState(false);
@@ -80,10 +88,13 @@ export default function FieldOperationsPage() {
     });
 
     socket.on("new_alert", (alertData: any) => {
-      toast.error(`Satellite Alert: ${alertData.severity} threat detected!`, {
-        description: alertData.message,
-        icon: '🚨',
-      });
+      const isFieldAlert = alertData.source === 'field_report';
+      toast.error(
+        isFieldAlert
+          ? `🚨 Field Officer Alert: ${alertData.severity} threat confirmed!`
+          : `🛰️ Satellite Alert: ${alertData.severity} threat detected!`,
+        { description: alertData.message, duration: 6000 }
+      );
     });
 
     return () => {
@@ -100,6 +111,28 @@ export default function FieldOperationsPage() {
     const res = await fieldService.getFieldReports();
     if (res.success) setReports(res.data);
   };
+
+  // Lazy-load latest satellite image for a zone (cache to prevent re-fetching)
+  const fetchZoneSatelliteImage = async (zoneId: string) => {
+    if (zoneLatestImages[zoneId] || fetchingZones.current.has(zoneId)) return;
+    fetchingZones.current.add(zoneId);
+    try {
+      const res = await historicalSaveService.getAnalysesByZone(zoneId);
+      if (res.success && res.data?.length > 0) {
+        const doneScan = res.data[0].scans?.find((s: any) => s.status === "done" && s.image_url);
+        if (doneScan?.image_url) {
+          setZoneLatestImages(prev => ({ ...prev, [zoneId]: doneScan.image_url }));
+        }
+      }
+    } catch { /* silently ignore */ }
+  };
+
+  // Filter reports by severity
+  const filteredReports = severityFilter === "ALL"
+    ? reports
+    : reports.filter(r =>
+        r.aiAnalysis?.severity?.toLowerCase() === severityFilter.toLowerCase()
+      );
 
   const handlePhotoCapture = (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
@@ -375,19 +408,48 @@ export default function FieldOperationsPage() {
             animate={{ opacity: 1, x: 0 }}
             className="flex flex-col h-full"
           >
-            <h2 className="text-xl font-bold mb-6 flex items-center gap-2">
+            <h2 className="text-xl font-bold mb-3 flex items-center gap-2">
               <ShieldAlert className="text-cyan-500" />
               Live Field Intelligence
             </h2>
 
+            {/* ── Severity Filter Buttons ── */}
+            <div className="flex gap-2 mb-4 flex-wrap">
+              {["ALL", "CRITICAL", "HIGH", "MEDIUM", "LOW"].map(level => {
+                const count = level === "ALL"
+                  ? reports.length
+                  : reports.filter(r => r.aiAnalysis?.severity?.toUpperCase() === level).length;
+                const isActive = severityFilter === level;
+                const colorClass =
+                  level === "CRITICAL" ? (isActive ? "bg-red-500/20 border-red-500/50 text-red-300"     : "border-red-500/20 text-red-500/50") :
+                  level === "HIGH"     ? (isActive ? "bg-orange-500/20 border-orange-500/50 text-orange-300" : "border-orange-500/20 text-orange-500/50") :
+                  level === "MEDIUM"   ? (isActive ? "bg-yellow-500/20 border-yellow-500/50 text-yellow-300" : "border-yellow-500/20 text-yellow-500/50") :
+                  level === "LOW"      ? (isActive ? "bg-emerald-500/20 border-emerald-500/50 text-emerald-300" : "border-emerald-500/20 text-emerald-500/50") :
+                  (isActive ? "bg-white/20 border-white/30 text-white" : "border-white/10 text-zinc-500");
+                return (
+                  <button key={level} onClick={() => setSeverityFilter(level)}
+                    className={`px-2.5 py-1 rounded-full text-[10px] font-mono uppercase border transition-all hover:opacity-100 ${colorClass} ${!isActive ? "opacity-60 hover:opacity-100" : ""}`}>
+                    {level} <span className="opacity-60">({count})</span>
+                  </button>
+                );
+              })}
+            </div>
+
             <div className="flex-1 space-y-4 max-h-[800px] overflow-y-auto pr-2 custom-scrollbar">
-              {reports.length === 0 ? (
+              {filteredReports.length === 0 ? (
                 <div className="text-center py-12 border border-white/5 rounded-2xl bg-white/5">
-                  <p className="text-zinc-500 font-mono text-sm uppercase">No field reports found</p>
+                  <p className="text-zinc-500 font-mono text-sm uppercase">
+                    {severityFilter === "ALL" ? "No field reports found" : `No ${severityFilter} severity reports`}
+                  </p>
                 </div>
               ) : (
                 <AnimatePresence>
-                  {reports.map((report) => (
+                  {filteredReports.map((report) => {
+                    const zoneId = String((report.zoneId as any)?._id || report.zoneId || "");
+                    const satImage = zoneLatestImages[zoneId];
+                    if (zoneId && !satImage) fetchZoneSatelliteImage(zoneId);
+
+                    return (
                     <motion.div 
                       key={report._id} 
                       layout
@@ -407,7 +469,7 @@ export default function FieldOperationsPage() {
                           </div>
                           <div className="flex items-center gap-1 text-xs text-zinc-400 font-mono">
                             <MapPin size={12} />
-                            {report.zoneId?.name || "Unknown Zone"} • {report.gps.lat.toFixed(4)}, {report.gps.lng.toFixed(4)}
+                            {(report.zoneId as any)?.name || "Unknown Zone"} • {report.gps.lat.toFixed(4)}, {report.gps.lng.toFixed(4)}
                           </div>
                         </div>
                         
@@ -471,8 +533,34 @@ export default function FieldOperationsPage() {
                           )}
                         </div>
                       </div>
+
+                      {/* ── Satellite vs Ground Comparison ── */}
+                      {satImage && (
+                        <div className="border-t border-white/5 px-4 pb-4">
+                          <p className="text-[10px] font-mono text-zinc-500 uppercase tracking-widest mb-2 pt-3 flex items-center gap-1">
+                            <Satellite size={10} /> Satellite vs Ground Comparison
+                          </p>
+                          <div className="grid grid-cols-2 gap-2">
+                            <div>
+                              <p className="text-[9px] text-zinc-600 font-mono mb-1">GROUND PHOTO</p>
+                              {/* eslint-disable-next-line @next/next/no-img-element */}
+                              <img src={`http://localhost:5000/${report.imagePath}`}
+                                alt="Ground" className="w-full h-24 object-cover rounded-lg border border-white/10" />
+                            </div>
+                            <div>
+                              <p className="text-[9px] text-cyan-600 font-mono mb-1">SENTINEL-2 (LATEST)</p>
+                              {/* eslint-disable-next-line @next/next/no-img-element */}
+                              <img src={satImage} alt="Satellite"
+                                className="w-full h-24 object-cover rounded-lg border border-cyan-500/20"
+                                onError={(e) => { (e.target as HTMLImageElement).style.display = 'none'; }} />
+                            </div>
+                          </div>
+                        </div>
+                      )}
+
                     </motion.div>
-                  ))}
+                  );
+                  })}
                 </AnimatePresence>
               )}
             </div>

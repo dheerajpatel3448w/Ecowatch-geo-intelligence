@@ -227,5 +227,16 @@ export const historicalSaveService = {
       return { success: false };
     }
   },
+
+  // All analyses for a specific zone (for satellite comparison in field page)
+  getAnalysesByZone: async (zoneId: string): Promise<{ success: boolean; data: SavedAnalysis[]; count: number }> => {
+    try {
+      const res = await fetch(`${API_URL}/historical/zone/${zoneId}`, { headers: getHeaders() });
+      return await res.json();
+    } catch (error) {
+      console.error("getAnalysesByZone error:", error);
+      return { success: false, data: [], count: 0 };
+    }
+  },
 };
 
