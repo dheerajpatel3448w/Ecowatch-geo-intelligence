@@ -17,9 +17,22 @@ from src.utils.logger import get_logger
 
 logger = get_logger("vl_analyzer")
 
-# ── Structured Prompt ────────────────────────────────────────────────────────
-ANALYSIS_PROMPT = """You are an expert environmental satellite image analyst.
-Analyze this satellite image for environmental threats and land cover.
+# ── Structured Prompt ─────────────────────────────────────────────
+ANALYSIS_PROMPT = """You are an expert environmental satellite image analyst specializing in 
+tropical rainforest monitoring (Amazon, Congo, SE Asia).
+
+Analyze this Sentinel-2 satellite image for environmental threats.
+
+IMPORTANT VISUAL CUES for tropical forests:
+- Dark green = dense healthy forest canopy (GOOD)
+- Pink/magenta/red-brown patches = freshly cleared/burned forest land (DEFORESTATION — HIGH RISK)
+- Light tan/yellow = bare soil, agricultural fields = cleared land
+- Geometric rectangular shapes cut from forest = illegal logging roads or farm plots
+- White = clouds (ignore for analysis)
+- Blue/dark = water bodies (rivers, lakes)
+
+If you see pink, brown, or tan areas surrounded by dark green forest — that IS active deforestation.
+Do NOT describe cleared forest land as "no threats" — cleared patches in rainforest ARE threats.
 
 Respond ONLY with valid JSON in this exact format:
 {
@@ -32,14 +45,14 @@ Respond ONLY with valid JSON in this exact format:
 }
 
 Rules:
-- "threats": array of detected threats from: ["deforestation", "illegal_mining", "water_pollution", "urban_encroachment", "agricultural_expansion", "none"]
+- "threats": array from: ["deforestation", "illegal_mining", "water_pollution", "urban_encroachment", "agricultural_expansion", "none"]
 - "severity": one of "none", "low", "medium", "high", "critical"
-- "description": 2-3 sentences describing what you observe
+- "description": 2-3 sentences describing what you observe. Be specific about colors and areas.
 - "affected_areas": directions where threats are found: ["north", "south", "east", "west", "northeast", "northwest", "southeast", "southwest", "center", "throughout"]
-- "forest_visible": true if dense forest canopy is visible
+- "forest_visible": true if dense dark-green forest canopy is visible
 - "confidence": "low", "medium", or "high" based on image clarity
 
-If image is cloudy or unclear, set confidence to "low" and threats to ["none"].
+If image is mostly white (clouds), set confidence to "low" and threats to ["none"].
 """
 
 # ── Default response on failure ──────────────────────────────────────────────
@@ -309,6 +322,54 @@ If no visible change: change_detected=false, severity=none."""
         }
 
 
+    def generate_verdict(self, prompt: str) -> str:
+        """
+        Text-only verdict generate karo (no image).
+        Historical analysis summary ke liye use hota hai:
+        multiple scans ka data dekar ek professional verdict maango.
+        """
+        if self._model is None:
+            logger.warning("generate_verdict: model not loaded, returning default")
+            return "Analysis complete."
+
+        try:
+            import torch
+
+            messages = [{
+                "role": "user",
+                "content": [{"type": "text", "text": prompt}],
+            }]
+
+            text = self._processor.apply_chat_template(
+                messages, tokenize=False, add_generation_prompt=True
+            )
+            inputs = self._processor(
+                text          = [text],
+                return_tensors= "pt",
+            ).to(self._device)
+
+            with torch.no_grad():
+                output_ids = self._model.generate(
+                    **inputs,
+                    max_new_tokens = 120,
+                    do_sample      = False,
+                    temperature    = None,
+                    top_p          = None,
+                )
+
+            generated = output_ids[:, inputs["input_ids"].shape[1]:]
+            verdict   = self._processor.batch_decode(
+                generated, skip_special_tokens=True
+            )[0].strip()
+
+            logger.info(f"generate_verdict: {verdict[:150]}...")
+            return verdict if verdict else "Analysis complete."
+
+        except Exception as e:
+            logger.error(f"generate_verdict failed: {e}")
+            return "Analysis complete."
+
+
 # ── Module-level singleton ────────────────────────────────────────────────────
 _analyzer = VLAnalyzer()
 
@@ -329,3 +390,8 @@ def compare_images(rgb_old: np.ndarray, rgb_new: np.ndarray) -> dict:
     Qwen dono images dekhke batata hai: kya change hua, kahan, kyun.
     """
     return _analyzer.compare_images(rgb_old, rgb_new)
+
+
+def generate_verdict(prompt: str) -> str:
+    """Historical analysis ke liye text-only verdict generate karo."""
+    return _analyzer.generate_verdict(prompt)

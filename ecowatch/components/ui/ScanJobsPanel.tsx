@@ -6,9 +6,52 @@ import { formatDistanceToNow } from "date-fns";
 import { Play, RotateCcw, AlertTriangle, CheckCircle2, Loader2, XCircle, FileText, Mail, Send } from "lucide-react";
 import { motion, AnimatePresence } from "framer-motion";
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from "@radix-ui/react-tooltip";
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import { reportsService } from "@/lib/api/reports";
 import { toast } from "sonner";
+
+// ── ML Pipeline Stage Progress Bar ───────────────────────────────────────────
+const PIPELINE_STAGES = [
+  "Fetching Sentinel-2 imagery...",
+  "Running NDVI calculation...",
+  "Analyzing with Qwen2-VL AI...",
+  "Detecting deforestation threats...",
+  "Publishing scan results...",
+];
+
+function ScanProgressBar({ status }: { status: string }) {
+  const [stageIdx, setStageIdx] = useState(0);
+  const [progress, setProgress] = useState(0);
+
+  useEffect(() => {
+    if (status !== "pending" && status !== "processing") return;
+    const stageInterval = setInterval(() => {
+      setStageIdx((i) => (i + 1) % PIPELINE_STAGES.length);
+    }, 3500);
+    const progressInterval = setInterval(() => {
+      setProgress((p) => (p >= 95 ? 10 : p + Math.random() * 8));
+    }, 600);
+    return () => { clearInterval(stageInterval); clearInterval(progressInterval); };
+  }, [status]);
+
+  return (
+    <div className="mt-2 flex flex-col gap-1.5">
+      <div className="flex items-center gap-1.5">
+        <Loader2 size={10} className="text-amber-400 animate-spin shrink-0" />
+        <span className="text-[9px] font-mono text-amber-400/80 truncate">
+          {PIPELINE_STAGES[stageIdx]}
+        </span>
+      </div>
+      <div className="w-full h-1 bg-white/5 rounded-full overflow-hidden">
+        <motion.div
+          className="h-full bg-gradient-to-r from-amber-500 via-cyan-500 to-emerald-500 rounded-full"
+          style={{ width: `${progress}%` }}
+          transition={{ duration: 0.6, ease: "easeOut" }}
+        />
+      </div>
+    </div>
+  );
+}
 
 interface ScanJobsPanelProps {
   zone: Zone;
@@ -96,6 +139,17 @@ export function ScanJobsPanel({ zone, scans, isLoading, onTriggerScan, onRetrySc
           {isTriggering ? "Initializing..." : "Trigger Manual Scan"}
         </button>
 
+        {/* Info: Processing time notice */}
+        {scans.some(s => s.status === "pending" || s.status === "processing") && (
+          <div className="flex items-start gap-2 px-3 py-2 bg-amber-500/5 border border-amber-500/20 rounded-lg mt-1">
+            <Loader2 size={11} className="text-amber-400 animate-spin shrink-0 mt-0.5" />
+            <p className="text-[9px] font-mono text-amber-400/80 leading-relaxed">
+              ML pipeline active — Sentinel-2 imagery fetch + Qwen2-VL analysis takes <strong>5–10 minutes</strong>. Results will appear automatically below.
+            </p>
+          </div>
+        )}
+
+
         {/* Intelligence Report Actions */}
         <div className="grid grid-cols-2 gap-2 mt-2">
           <button 
@@ -181,6 +235,11 @@ export function ScanJobsPanel({ zone, scans, isLoading, onTriggerScan, onRetrySc
                       {formatDistanceToNow(new Date(scan.createdAt), { addSuffix: true })}
                     </span>
                   </div>
+
+                  {/* Progress bar for pending/processing scans */}
+                  {(scan.status === "pending" || scan.status === "processing") && (
+                    <ScanProgressBar status={scan.status} />
+                  )}
 
                   {scan.status === 'completed' && (
                     <div className="mt-2 grid grid-cols-2 gap-2">

@@ -1,9 +1,9 @@
 "use client";
 
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import { motion } from "framer-motion";
 import { HoloLogo } from "./HoloLogo";
-import { Bell, User, Orbit, ChevronDown, Scan, Scale } from "lucide-react";
+import { Bell, User, Orbit, ChevronDown, BrainCircuit } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { useAuth } from "@/context/AuthContext";
 import Link from "next/link";
@@ -12,17 +12,34 @@ import Link from "next/link";
 export function Navbar() {
   const { isAuthenticated, user, logout } = useAuth();
   const [activeTab, setActiveTab] = useState("mission");
+  const [mlOnline, setMlOnline] = useState<boolean | null>(null);
+
+  useEffect(() => {
+    const checkML = async () => {
+      try {
+        const res = await fetch("http://localhost:8001/api/health", { signal: AbortSignal.timeout(3000) });
+        setMlOnline(res.ok);
+      } catch {
+        setMlOnline(false);
+      }
+    };
+    checkML();
+    const interval = setInterval(checkML, 15000);
+    return () => clearInterval(interval);
+  }, []);
 
   const publicLinks = [
     { id: "public", label: "Public Portal", href: "/public" },
   ];
 
   const authLinks = [
-    { id: "dashboard", label: "Command Center", href: "/dashboard" },
-    { id: "zones", label: "Mission Control", href: "/zones" },
-    { id: "field", label: "Field Ops", href: "/field" },
-    { id: "legal", label: "Legal", href: "/legal" },
-    { id: "export", label: "Data Export", href: "/export" },
+    { id: "dashboard",   label: "Command Center", href: "/dashboard" },
+    { id: "zones",       label: "Mission Control", href: "/zones" },
+    { id: "monitoring",  label: "Monitoring",      href: "/monitoring" },
+    { id: "historical",  label: "Historical",      href: "/historical" },
+    { id: "field",       label: "Field Ops",       href: "/field" },
+    { id: "legal",       label: "Legal",           href: "/legal" },
+    { id: "export",      label: "Data Export",     href: "/export" },
   ];
 
   if (user?.role === 'admin') {
@@ -115,6 +132,17 @@ export function Navbar() {
           ) : (
             <>
               {/* Auth Actions */}
+              {/* ML Service Status */}
+              {mlOnline !== null && (
+                <div className="hidden sm:flex items-center gap-1.5 px-2 py-1 rounded-full border border-white/10 bg-black/20">
+                  <BrainCircuit size={12} className={mlOnline ? "text-emerald-400" : "text-red-400"} />
+                  <span className={`text-[9px] font-mono uppercase tracking-widest ${mlOnline ? "text-emerald-400" : "text-red-400"}`}>
+                    {mlOnline ? "ML Online" : "ML Offline"}
+                  </span>
+                  <span className={`w-1.5 h-1.5 rounded-full ${mlOnline ? "bg-emerald-500 animate-pulse" : "bg-red-500"}`} />
+                </div>
+              )}
+
               <button className="relative p-2 text-zinc-400 hover:text-emerald-400 transition-colors hidden sm:block">
                 <Bell size={18} />
                 <span className="absolute top-1.5 right-1.5 w-2 h-2 bg-red-500 rounded-full animate-ping" />

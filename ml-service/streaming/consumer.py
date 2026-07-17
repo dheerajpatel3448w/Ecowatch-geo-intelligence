@@ -98,6 +98,12 @@ class ScanJobConsumer:
             # ── 3. Result publish karo ──────────────────────────────────
             result["zone_id"] = zone_id
             # original_image_path already in result from analyzer.py
+
+            # Campaign fields — forward karo taaki Node consumer campaign update kar sake
+            result["job_id"]            = job_id
+            result["campaign_id"]       = job.get("campaign_id", "")
+            result["campaign_scan_idx"] = job.get("campaign_scan_idx", -1)
+
             self._producer.publish(result)
 
             # ── 4. Commit ─────────────────────────────────────────────────────

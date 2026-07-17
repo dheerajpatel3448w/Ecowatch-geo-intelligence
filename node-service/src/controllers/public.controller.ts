@@ -7,9 +7,10 @@
  */
 
 import { Request, Response } from 'express';
-import Zone   from '../models/Zone';
-import Scan   from '../models/Scan';
-import Alert  from '../models/Alert';
+import Zone     from '../models/Zone';
+import Scan     from '../models/Scan';
+import Alert    from '../models/Alert';
+import Campaign from '../models/Campaign';
 
 // ── GET /api/public/stats ────────────────────────────────────────────────────
 export const getPublicStats = async (_req: Request, res: Response): Promise<void> => {
@@ -21,6 +22,8 @@ export const getPublicStats = async (_req: Request, res: Response): Promise<void
       criticalAlerts,
       highAlerts,
       recentScans,
+      activeCampaigns,
+      totalCampaigns,
     ] = await Promise.all([
       Zone.countDocuments({ isActive: true }),
       Scan.countDocuments({ status: 'completed' }),
@@ -28,6 +31,8 @@ export const getPublicStats = async (_req: Request, res: Response): Promise<void
       Alert.countDocuments({ severity: 'CRITICAL' }),
       Alert.countDocuments({ severity: 'HIGH' }),
       Scan.find({ status: 'completed' }).sort({ createdAt: -1 }).limit(50),
+      Campaign.countDocuments({ status: 'active' }),
+      Campaign.countDocuments(),
     ]);
 
     // Calculate aggregate forest stats
@@ -60,18 +65,29 @@ export const getPublicStats = async (_req: Request, res: Response): Promise<void
     res.json({
       success:    true,
       lastUpdated: new Date().toISOString(),
+      // Top-level fields (home page stat cards)
       data: {
+        totalZones,
+        totalScans,
+        totalAlerts,
+        activeThreats: criticalAlerts + highAlerts,
+        activeCampaigns,
+        totalCampaigns,
         monitoring: {
-          totalZonesMonitored:  totalZones,
-          totalSatelliteScans:  totalScans,
-          latestScanDate:       latestScan?.scanDate ?? null,
+          totalZonesMonitored:   totalZones,
+          totalSatelliteScans:   totalScans,
+          latestScanDate:        latestScan?.scanDate ?? null,
           averageForestCoverage: avgForestPct ? `${avgForestPct}%` : 'N/A',
         },
         alerts: {
-          totalAlertsRaised:   totalAlerts,
+          totalAlertsRaised: totalAlerts,
           criticalAlerts,
           highAlerts,
-          activeThreats:       criticalAlerts + highAlerts,
+          activeThreats:     criticalAlerts + highAlerts,
+        },
+        campaigns: {
+          active:  activeCampaigns,
+          total:   totalCampaigns,
         },
         environment: {
           co2EstimateTonnes,
@@ -81,7 +97,7 @@ export const getPublicStats = async (_req: Request, res: Response): Promise<void
         spotlight: {
           mostDangerousZone,
         },
-        poweredBy: 'Sentinel-2 (ESA Copernicus) + Qwen2-VL AI + NDVI Physics Analysis',
+        poweredBy:  'Sentinel-2 (ESA Copernicus) + Qwen2-VL AI + NDVI Physics Analysis',
         dataPolicy: 'This data is provided for public transparency and environmental awareness.',
       },
     });

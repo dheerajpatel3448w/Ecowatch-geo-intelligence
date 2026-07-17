@@ -4,7 +4,7 @@ import { useEffect, useState } from "react";
 import dynamic from "next/dynamic";
 import { motion, AnimatePresence } from "framer-motion";
 import confetti from "canvas-confetti";
-import { zonesService } from "@/lib/api/zones";
+import { zonesService, AuthError } from "@/lib/api/zones";
 import { Zone, ZoneBBox, ZoneCoordinates } from "@/types/zone.types";
 import { Scan } from "@/types/scan.types";
 import { ZoneRegistryList } from "@/components/ui/ZoneRegistryList";
@@ -41,8 +41,23 @@ export default function MissionControlPage() {
   const [isEditSubmitting, setIsEditSubmitting] = useState(false);
 
   const fetchZones = async () => {
-    const res = await zonesService.getZones();
-    if (res.success) setZones(res.data);
+    // Check for token before hitting the API
+    const token = localStorage.getItem("token");
+    if (!token) {
+      toast.error("Please login to continue.");
+      window.location.href = "/login";
+      return;
+    }
+    try {
+      const res = await zonesService.getZones();
+      if (res.success) setZones(res.data);
+    } catch (err) {
+      if (err instanceof AuthError) {
+        toast.error("Session expired. Redirecting to login...");
+        localStorage.removeItem("token");
+        setTimeout(() => { window.location.href = "/login"; }, 1500);
+      }
+    }
   };
 
   useEffect(() => {

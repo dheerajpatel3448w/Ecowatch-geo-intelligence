@@ -1,19 +1,21 @@
-# 🌍 EcoWatch: Geospatial Intelligence & Threat Detection System
+# 🌍 EcoWatch — AI Deforestation Intelligence Platform
 
-> **An AI-powered Satellite Forest Monitoring & Deforestation Detection System.**
+> **An AI-powered Satellite Forest Monitoring & Deforestation Detection System built to combat deforestation, illegal mining, and ecological damage.**
 
-**EcoWatch** is an advanced satellite threat detection platform built to combat deforestation, illegal mining, and ecological damage. It combines a Next.js command-center UI, Apache Kafka for high-throughput event streaming, and Python-based Machine Learning (Qwen2-VL) to analyze satellite imagery in real-time. 
+EcoWatch combines a Next.js command-center UI, Apache Kafka for high-throughput event streaming, and Python-based Machine Learning (Qwen2-VL) to analyze satellite imagery in real-time. It provides autonomous monitoring, historical analysis, and on-ground field validation.
 
 ---
 
 ## 🚀 Key Features
 
 - **🌐 Global Threat Radar:** A 3D geospatial dashboard with real-time alerts, metrics, and threat mapping.
-- **🛰️ Satellite AI Analysis:** Integrates the Qwen2-VL-2B-Instruct Vision-Language Model to automatically detect deforestation and environmental anomalies from satellite imagery (NDVI analysis).
+- **🛰️ Satellite AI Analysis:** Integrates the Qwen2-VL-2B-Instruct Vision-Language Model with Sentinel-2 L2A archive to automatically detect deforestation and environmental anomalies.
+- **📅 Monitoring Campaigns:** Schedule repeated satellite scans across time to track deforestation. Generates alerts dynamically and provides final reports with AI verdicts.
+- **🕒 Historical Analysis:** Compare satellite imagery across time from the Sentinel-2 archive (2015-present). Analyzes multi-date scans, calculates total forest loss, annual rates, and provides an AI professional verdict.
 - **📡 Mission Control (Zones):** Draw and manage surveillance zones directly on a map using React-Leaflet. Trigger manual or automated ML scans for specific coordinates.
 - **⚖️ Legal & Carbon Engine:** Calculates exact Carbon loss and generates official **PDF Legal Evidence Reports** automatically for FIR submission.
 - **📱 Field Operations Portal:** A mobile-first UI for ground rangers to upload evidence photos, matched with GPS locations, which are also verified locally by AI.
-- **⚡ Real-Time Streaming:** End-to-end Kafka integration handling heavy ML workloads asynchronously between Node.js and Python.
+- **⚡ Real-Time Streaming:** End-to-end Kafka integration handling heavy ML workloads asynchronously between Node.js and Python, with WebSocket updates to the frontend.
 
 ---
 
@@ -32,31 +34,17 @@ The platform is divided into three main microservices, heavily utilizing contain
 - **Runtime:** Node.js, Express.js
 - **Database:** MongoDB (Mongoose)
 - **Message Broker:** KafkaJS (Producer/Consumer)
-- **Features:** JWT Authentication, Role-Based Access Control (Admin, Analyst, Ranger), PDFKit (Legal Reports), Multer (Image Uploads)
+- **Features:** JWT Authentication, Role-Based Access Control (Admin, Analyst, Ranger), PDFKit (Legal Reports), Multer (Image Uploads), Node-Cron (Campaign Scheduler)
 
 ### 3. ML Service (`/ml-service`)
 - **Runtime:** Python 3.11+, FastAPI
 - **AI Models:** Qwen2-VL-2B-Instruct, HuggingFace Transformers, PyTorch
 - **Message Broker:** Confluent-Kafka
-- **Features:** Satellite image processing, NDVI physics logic, local photo validation
+- **Features:** Satellite image processing (Sentinel Hub), NDVI physics logic, local photo validation, automated historical scan aggregation.
 
 ### 4. Infrastructure (`docker-compose.yml`)
 - **Zookeeper & Kafka:** Confluent images for event streaming.
 - **MongoDB:** Database storage.
-
----
-
-## 📂 Project Structure
-
-```text
-ecowatch/
-├── ecowatch/              # Next.js Frontend UI
-├── node-service/          # Express API Backend
-├── ml-service/            # FastAPI Python Machine Learning Service
-├── docker-compose.yml     # Infrastructure configuration (Kafka, Mongo)
-├── ECOWATCH_HANDOFF.md    # Developer architectural notes
-└── README.md              # Project documentation
-```
 
 ---
 
@@ -65,7 +53,7 @@ ecowatch/
 ### 1. Start Infrastructure (Docker)
 Ensure Docker Desktop is running, then spin up MongoDB, Zookeeper, and Kafka.
 ```bash
-docker-compose up -d
+docker compose up -d
 ```
 
 ### 2. Setup Node.js API Service
@@ -107,6 +95,11 @@ PORT=5000
 MONGO_URI=mongodb://localhost:27017/ecowatch
 JWT_SECRET=ecowatch_production_secret_change_me
 KAFKA_BROKER=localhost:9092
+ML_SERVICE_URL=http://localhost:8001
+SMTP_HOST=smtp.gmail.com
+SMTP_PORT=587
+SMTP_USER=your_email
+SMTP_PASS=your_app_password
 ```
 
 **`/ml-service/.env`**

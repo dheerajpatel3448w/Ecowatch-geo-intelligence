@@ -175,3 +175,190 @@ def run_cleanup(req: CleanupRequest = CleanupRequest()):
         "after_mb":     after.get("total_images_mb", 0),
         "disk_free_gb": after.get("disk", {}).get("free_gb", "N/A"),
     }
+
+
+# ── POST /historical/analyze ─────────────────────────────────────────────────
+class HistoricalScanRequest(BaseModel):
+    zone_id:        str
+    bbox:           List[float]         # [lng_min, lat_min, lng_max, lat_max]
+    dates:          List[str]           # ["2022-06-01", "2022-12-01", ...]
+    resolution:     Optional[int]  = 20
+    max_cloud_pct:  Optional[int]  = 50  # Skip image if cloud > this %
+
+
+class HistoricalScanResult(BaseModel):
+    date:           str
+    status:         str          # "done" | "skipped"
+    skip_reason:    str
+    ndvi_mean:      float
+    forest_pct:     float
+    threats:        List[str]
+    severity:       str
+    image_path:     str
+    delta_from_first: float      # % change from first scan
+    loss_hectares:  float
+
+
+class HistoricalAnalyzeResponse(BaseModel):
+    zone_id:        str
+    scan_count:     int
+    scans:          List[HistoricalScanResult]
+    summary: dict   # total_loss_pct, total_loss_ha, rate_per_year, biggest_drop
+    ai_verdict:     str
+
+
+@router.post("/historical/analyze", response_model=HistoricalAnalyzeResponse)
+def historical_analyze(req: HistoricalScanRequest):
+    """
+    Multiple historical dates pe Sentinel-2 images fetch karo aur compare karo.
+    - Har date pe: fetch → validate → NDVI+Qwen analyze
+    - Cloudy/blank → skipped mark karo (gracefully)
+    - Output: timeline + hectares lost + overall AI verdict
+    """
+    if vl_analyzer._analyzer._model is None:
+        raise HTTPException(503, "Qwen2-VL model not loaded yet")
+
+    if len(req.dates) < 2 or len(req.dates) > 10:
+        raise HTTPException(400, "dates must have 2–10 entries")
+
+    from src.utils.geo_calculator import calculate_loss_hectares, calculate_annual_rate
+
+    logger.info(f"[Historical] zone={req.zone_id} | dates={req.dates}")
+
+    results: list = []
+    first_forest_pct: float | None = None
+
+    for date_str in req.dates:
+        scan_entry: dict = {
+            "date":             date_str,
+            "status":           "skipped",
+            "skip_reason":      "",
+            "ndvi_mean":        0.0,
+            "forest_pct":       0.0,
+            "threats":          ["none"],
+            "severity":         "none",
+            "image_path":       "",
+            "delta_from_first": 0.0,
+            "loss_hectares":    0.0,
+        }
+
+        try:
+            # Date window: ±15 days around the target date for cloud-free mosaic
+            from datetime import datetime, timedelta
+            target = datetime.strptime(date_str, "%Y-%m-%d")
+            date_from = (target - timedelta(days=15)).strftime("%Y-%m-%d")
+            date_to   = target.strftime("%Y-%m-%d")
+
+            image_data = fetch_image(
+                bbox_coords = req.bbox,
+                date_from   = date_from,
+                date_to     = date_to,
+                resolution  = req.resolution or 20,
+            )
+
+            # Validate — reject blank/mostly-cloud images
+            if not validate_image(image_data["rgb"]):
+                scan_entry["skip_reason"] = "Blank or invalid image (cloud cover too high)"
+                logger.warning(f"[Historical] Skipped {date_str} — blank image")
+                results.append(scan_entry)
+                continue
+
+            job_id = f"hist-{req.zone_id[:8]}-{date_str}"
+            result = analyze(
+                rgb    = image_data["rgb"],
+                nir    = image_data["nir"],
+                job_id = job_id,
+            )
+
+            forest_pct = result["forest_percentage"]
+            if first_forest_pct is None:
+                first_forest_pct = forest_pct
+
+            delta      = round((first_forest_pct or forest_pct) - forest_pct, 2)
+            loss_ha    = calculate_loss_hectares(req.bbox, first_forest_pct or forest_pct, forest_pct)
+
+            scan_entry.update({
+                "status":           "done",
+                "ndvi_mean":        result["ndvi_mean"],
+                "forest_pct":       forest_pct,
+                "threats":          result["threats"],
+                "severity":         result["severity"],
+                "image_path":       result.get("heatmap_path", ""),
+                "delta_from_first": delta,
+                "loss_hectares":    loss_ha,
+            })
+            logger.info(f"[Historical] {date_str} -> forest={forest_pct}% | delta={delta}%")
+
+        except Exception as e:
+            scan_entry["skip_reason"] = f"Fetch/analysis error: {str(e)[:80]}"
+            logger.error(f"[Historical] Error for {date_str}: {e}")
+
+        results.append(scan_entry)
+
+    # ── Summary calculation ───────────────────────────────────────────────────
+    done_scans = [r for r in results if r["status"] == "done"]
+    total_loss_pct = 0.0
+    total_loss_ha  = 0.0
+    rate_per_year  = 0.0
+    biggest_drop   = 0.0
+    biggest_date   = ""
+
+    if len(done_scans) >= 2:
+        first_pct = done_scans[0]["forest_pct"]
+        last_pct  = done_scans[-1]["forest_pct"]
+        total_loss_pct = round(first_pct - last_pct, 2)
+        total_loss_ha  = calculate_loss_hectares(req.bbox, first_pct, last_pct)
+
+        # Days between first and last done scan
+        from datetime import datetime
+        try:
+            d1 = datetime.strptime(done_scans[0]["date"],  "%Y-%m-%d")
+            d2 = datetime.strptime(done_scans[-1]["date"], "%Y-%m-%d")
+            days = (d2 - d1).days
+            rate_per_year = calculate_annual_rate(total_loss_ha, days)
+        except Exception:
+            rate_per_year = 0.0
+
+        # Biggest single-period drop
+        for i in range(1, len(done_scans)):
+            drop = done_scans[i - 1]["forest_pct"] - done_scans[i]["forest_pct"]
+            if drop > biggest_drop:
+                biggest_drop = drop
+                biggest_date = done_scans[i]["date"]
+
+    # ── Overall AI verdict — feed all done scans to Qwen2-VL ─────────────────
+    ai_verdict = "Analysis complete."
+    if len(done_scans) >= 2:
+        try:
+            verdict_prompt = (
+                f"Historical satellite analysis of {len(done_scans)} scans over "
+                f"{done_scans[0]['date']} to {done_scans[-1]['date']}. "
+                f"Total forest loss: {total_loss_pct}% ({total_loss_ha} hectares). "
+                f"Threats detected: {set(t for s in done_scans for t in s['threats'])}. "
+                f"Provide a 2-sentence professional verdict on the deforestation pattern and urgency."
+            )
+            ai_verdict = vl_analyzer.generate_verdict(verdict_prompt)
+        except Exception as e:
+            logger.warning(f"[Historical] AI verdict generation failed: {e}")
+            if total_loss_pct > 20:
+                ai_verdict = f"Critical deforestation detected: {total_loss_pct}% forest loss over the analysis period. Immediate investigation recommended."
+            elif total_loss_pct > 5:
+                ai_verdict = f"Moderate forest loss of {total_loss_pct}% detected. Monitoring should continue."
+            else:
+                ai_verdict = f"Minimal forest change ({total_loss_pct}%) detected. Area appears stable."
+
+    return HistoricalAnalyzeResponse(
+        zone_id    = req.zone_id,
+        scan_count = len(done_scans),
+        scans      = [HistoricalScanResult(**r) for r in results],
+        summary    = {
+            "total_loss_pct": total_loss_pct,
+            "total_loss_ha":  total_loss_ha,
+            "rate_per_year":  rate_per_year,
+            "biggest_drop_pct":  round(biggest_drop, 2),
+            "biggest_drop_date": biggest_date,
+            "scans_done":     len(done_scans),
+            "scans_skipped":  len(results) - len(done_scans),
+        },
+        ai_verdict = ai_verdict,
+    )

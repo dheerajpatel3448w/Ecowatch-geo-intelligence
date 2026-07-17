@@ -6,8 +6,9 @@ import http    from 'http';
 
 import connectDB             from './config/db';
 import { connectKafka }      from './config/kafka';
-import { startResultConsumer } from './scheduler/consumer';
-import { startScheduler }      from './scheduler/producer';
+import { startResultConsumer }   from './scheduler/consumer';
+import { startScheduler }        from './scheduler/producer';
+import { startCampaignScheduler } from './scheduler/campaign.scheduler';
 import env                   from './config/env';
 
 import authRoutes   from './routes/auth.routes';
@@ -20,8 +21,9 @@ import gisRoutes    from './routes/gis.routes';
 import publicRoutes   from './routes/public.routes';
 import fieldRoutes    from './routes/field.routes';
 import userRoutes     from './routes/user.routes';
-import analyticsRoutes from './routes/analytics.routes';
-import exportRoutes   from './routes/export.routes';
+import analyticsRoutes  from './routes/analytics.routes';
+import exportRoutes    from './routes/export.routes';
+import campaignRoutes  from './routes/campaign.routes';
 import { initSocket } from './utils/socket';
 
 const app = express();
@@ -59,6 +61,7 @@ app.use('/api/public',    publicRoutes);
 app.use('/api/field',     fieldRoutes);
 app.use('/api/analytics', analyticsRoutes);
 app.use('/api/export',    exportRoutes);
+app.use('/api/campaigns', campaignRoutes);
 
 // ── 404 Handler ──────────────────────────────────────────────
 app.use((_req, res) => {
@@ -71,6 +74,7 @@ const start = async () => {
   await connectKafka();
   await startResultConsumer();
   startScheduler();             // Auto-scan cron job
+  startCampaignScheduler();     // Campaign monitoring cron
 
   server.listen(Number(env.PORT), () => {
     console.log(`\n🚀 EcoWatch Node.js Service`);
@@ -97,6 +101,12 @@ const start = async () => {
     console.log(`   GET  /api/gis/all/geojson             -> All Zones GeoJSON`);
     console.log(`   GET  /api/public/stats                -> Public Dashboard (no auth)`);
     console.log(`   POST /api/field/report                -> Field Photo Report`);
+    console.log(`\n   Campaigns & Historical:`);
+    console.log(`   POST /api/campaigns                   -> Create monitoring campaign`);
+    console.log(`   GET  /api/campaigns                   -> List campaigns`);
+    console.log(`   GET  /api/campaigns/:id               -> Campaign detail + scans`);
+    console.log(`   POST /api/campaigns/preview-dates     -> Calculate scan dates (no DB)`);
+    console.log(`   POST /ml:8001/historical/analyze      -> Historical multi-date analysis`);
     console.log();
   });
 };

@@ -6,6 +6,7 @@ import env    from '../config/env';
 import nodemailer from 'nodemailer';
 import axios from 'axios';
 import { broadcastAlert, broadcastScanUpdate } from '../utils/socket';
+import { processCampaignScanResult } from './campaign.scheduler';
 
 // ML Service URL (locally running Windows pe)
 const ML_SERVICE_URL = process.env.ML_SERVICE_URL || 'http://localhost:8001';
@@ -102,6 +103,8 @@ export const startResultConsumer = async (): Promise<void> => {
           forest_visible, vl_confidence,
           deforestation_detected, heatmap_path,
           original_image_path,   // comparison ke liye
+          // Campaign fields (set by campaign.scheduler when triggering a campaign scan)
+          campaign_id, campaign_scan_idx,
         } = result;
 
         console.log(
@@ -148,6 +151,21 @@ export const startResultConsumer = async (): Promise<void> => {
         const populatedScan = await Scan.findById(scan._id).populate('zoneId', 'name bbox');
         if (populatedScan) {
           broadcastScanUpdate(populatedScan);
+        }
+
+        // ── Campaign scan result wiring ──────────────────────────────────────
+        // Agar yeh scan kisi monitoring campaign ka hissa hai → campaign update karo
+        if (campaign_id && campaign_scan_idx !== undefined && campaign_scan_idx >= 0) {
+          try {
+            await processCampaignScanResult(
+              campaign_id,
+              Number(campaign_scan_idx),
+              scan._id.toString(),
+            );
+            console.log(`[${job_id}] Campaign ${campaign_id} scan-${campaign_scan_idx} updated`);
+          } catch (campaignErr) {
+            console.error(`[${job_id}] Campaign update failed:`, campaignErr);
+          }
         }
 
         // 2. Zone lastScanned update karo

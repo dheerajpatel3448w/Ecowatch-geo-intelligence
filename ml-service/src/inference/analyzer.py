@@ -75,11 +75,28 @@ def analyze(
     # -- Save NDVI heatmap ----------------------------------------------------
     heatmap_path = _save_ndvi_heatmap(rgb, nir, vl_result, job_id)
 
-    # -- Combine results -------------------------------------------------------
-    deforestation_detected = (
-        "deforestation" in vl_result["threats"] or
-        ndvi_result["forest_pct"] < 20.0          # NDVI safety net
-    )
+    # -- Combine results: Smart fusion of NDVI + Qwen2-VL ----------------------
+    # Logic:
+    # 1. Qwen ne "deforestation" detect kiya → Always flag
+    # 2. NDVI critically low (<10% forest) → Always flag (bare/cleared land)
+    # 3. NDVI medium-low (10-30%) + Qwen ne koi bhi threat detect kiya → Flag
+    # 4. Qwen says none + NDVI > 30% → Clear area
+    ndvi_forest    = ndvi_result["forest_pct"]
+    qwen_threats   = vl_result["threats"]
+    qwen_deforest  = "deforestation" in qwen_threats or "agricultural_expansion" in qwen_threats
+
+    if ndvi_forest < 10.0:
+        # Critically low NDVI — definitely deforested/bare
+        deforestation_detected = True
+    elif qwen_deforest:
+        # Qwen explicitly detected clearing
+        deforestation_detected = True
+    elif ndvi_forest < 30.0 and len([t for t in qwen_threats if t != "none"]) > 0:
+        # Low forest + any threat seen by Qwen
+        deforestation_detected = True
+    else:
+        deforestation_detected = False
+
 
     result = {
         # Job info

@@ -11,9 +11,12 @@ Run:
 """
 
 import os
+from dotenv import load_dotenv
+load_dotenv()  # .env file load karo — uvicorn se chalane pe env vars set nahi hote otherwise
 import threading
 from contextlib import asynccontextmanager
 from fastapi import FastAPI
+from fastapi.middleware.cors import CORSMiddleware
 
 from api.routes import router
 from src.inference import vl_analyzer
@@ -73,6 +76,21 @@ app = FastAPI(
     description = "Satellite environmental monitoring — NDVI + Qwen2-VL analysis",
     version     = "2.0.0",
     lifespan    = lifespan
+)
+
+# ── CORS — Next.js (localhost:3000) se requests allow karo ───────────────────
+# NOTE: allow_credentials=True + allow_origins=["*"] is INVALID per CORS spec.
+# Either use specific origins WITH credentials, or wildcard WITHOUT credentials.
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins  = [
+        "http://localhost:3000",
+        "http://127.0.0.1:3000",
+        "*",                       # fallback for other clients
+    ],
+    allow_methods  = ["GET", "POST", "PUT", "DELETE", "OPTIONS", "PATCH"],
+    allow_headers  = ["*"],
+    allow_credentials = False,     # wildcard origin ke saath credentials nahi chalti
 )
 
 app.include_router(router, prefix="/api")

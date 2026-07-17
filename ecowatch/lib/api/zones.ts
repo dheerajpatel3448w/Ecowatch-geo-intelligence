@@ -2,6 +2,14 @@ import { CreateZonePayload, ZonesResponse, SingleZoneResponse } from "@/types/zo
 
 const API_URL = "http://localhost:5000/api";
 
+// Custom error for unauthenticated requests (401)
+export class AuthError extends Error {
+  constructor(message = "Unauthorized") {
+    super(message);
+    this.name = "AuthError";
+  }
+}
+
 const getHeaders = () => {
   const token = localStorage.getItem("token");
   return {
@@ -18,9 +26,11 @@ export const zonesService = {
       const res = await fetch(`${API_URL}/zones`, {
         headers: getHeaders(),
       });
-      if (!res.ok) throw new Error("Failed to fetch zones");
+      if (res.status === 401) throw new AuthError("Session expired. Please login again.");
+      if (!res.ok) throw new Error(`Failed to fetch zones (${res.status})`);
       return await res.json();
     } catch (error) {
+      if (error instanceof AuthError) throw error; // Re-throw so page can redirect
       console.error("Error fetching zones:", error);
       return { success: false, count: 0, data: [] };
     }

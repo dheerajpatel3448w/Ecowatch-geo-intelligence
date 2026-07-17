@@ -1,9 +1,18 @@
 "use client";
 
 import { motion } from "framer-motion";
-import { ArrowRight, Satellite, ShieldAlert, BrainCircuit, Activity, Globe2, RadioReceiver } from "lucide-react";
+import { useEffect, useState } from "react";
+import { ArrowRight, Satellite, ShieldAlert, BrainCircuit, Activity, Globe2, TreePine, AlertTriangle } from "lucide-react";
 import Link from "next/link";
 import { HoloLogo } from "@/components/ui/HoloLogo";
+
+interface PublicStats {
+  totalZones:       number;
+  totalScans:       number;
+  totalAlerts:      number;
+  activeThreats:    number;
+  activeCampaigns:  number;
+}
 
 const FADE_UP = {
   hidden: { opacity: 0, y: 30 },
@@ -16,6 +25,18 @@ const STAGGER = {
 };
 
 export default function Home() {
+  const [stats, setStats] = useState<PublicStats>({ totalZones: 0, totalScans: 0, totalAlerts: 0, activeThreats: 0, activeCampaigns: 0 });
+
+  useEffect(() => {
+    // Fetch real stats from public API (no auth needed)
+    fetch("http://localhost:5000/api/public/stats")
+      .then((r) => r.json())
+      .then((d) => {
+        if (d.success && d.data) setStats(d.data);
+      })
+      .catch(() => {}); // Fail silently — defaults remain
+  }, []);
+
   return (
     <div className="min-h-screen relative overflow-hidden -mt-24 pt-24 pb-20">
       
@@ -63,29 +84,45 @@ export default function Home() {
             </button>
           </Link>
           
-          <button className="w-full sm:w-auto px-8 py-4 rounded-none bg-white/5 border border-white/10 hover:bg-white/10 text-white font-mono uppercase tracking-widest transition-all flex items-center justify-center gap-3 group">
-            View Live Scans
-            <ArrowRight size={18} className="group-hover:translate-x-1 transition-transform" />
-          </button>
+          <Link href="/dashboard">
+            <button className="w-full sm:w-auto px-8 py-4 rounded-none bg-white/5 border border-white/10 hover:bg-white/10 text-white font-mono uppercase tracking-widest transition-all flex items-center justify-center gap-3 group">
+              View Live Dashboard
+              <ArrowRight size={18} className="group-hover:translate-x-1 transition-transform" />
+            </button>
+          </Link>
         </motion.div>
 
-        {/* Floating Mock Stats */}
+        {/* Real-time Live Stats */}
         <motion.div 
           variants={FADE_UP}
           className="absolute left-10 top-40 hidden lg:flex flex-col gap-2 p-4 bg-black/40 backdrop-blur-xl border border-white/10 rounded-xl"
         >
-          <span className="text-[10px] font-mono text-emerald-500 uppercase">Sector 7G Threat Level</span>
-          <span className="text-2xl font-bold text-white">LOW</span>
+          <span className="text-[10px] font-mono text-emerald-500 uppercase">Zones Monitored</span>
+          <div className="flex items-center gap-2">
+            <TreePine size={16} className="text-emerald-400" />
+            <span className="text-2xl font-bold text-white">{stats.totalZones}</span>
+          </div>
         </motion.div>
 
         <motion.div 
           variants={FADE_UP}
           className="absolute right-10 bottom-20 hidden lg:flex flex-col gap-2 p-4 bg-black/40 backdrop-blur-xl border border-white/10 rounded-xl"
         >
-          <span className="text-[10px] font-mono text-cyan-500 uppercase">Active Satellites</span>
+          <span className="text-[10px] font-mono text-red-400 uppercase">Active Threats</span>
           <div className="flex items-center gap-2">
-            <RadioReceiver size={16} className="text-cyan-400" />
-            <span className="text-2xl font-bold text-white">4,291</span>
+            <AlertTriangle size={16} className="text-red-400" />
+            <span className="text-2xl font-bold text-white">{stats.activeThreats}</span>
+          </div>
+        </motion.div>
+
+        <motion.div 
+          variants={FADE_UP}
+          className="absolute right-10 top-40 hidden lg:flex flex-col gap-2 p-4 bg-black/40 backdrop-blur-xl border border-white/10 rounded-xl"
+        >
+          <span className="text-[10px] font-mono text-emerald-400 uppercase">Active Campaigns</span>
+          <div className="flex items-center gap-2">
+            <Satellite size={16} className="text-emerald-400" />
+            <span className="text-2xl font-bold text-white">{stats.activeCampaigns}</span>
           </div>
         </motion.div>
       </motion.section>
@@ -170,28 +207,32 @@ export default function Home() {
         </div>
       </section>
 
-      {/* ── STATS TICKER ── */}
+      {/* ── STATS TICKER — Real data ── */}
       <div className="w-full border-y border-white/5 bg-black/50 py-4 mt-20 overflow-hidden flex">
         <motion.div 
-          animate={{ x: [0, -1000] }}
-          transition={{ repeat: Infinity, duration: 20, ease: "linear" }}
+          animate={{ x: [0, -1200] }}
+          transition={{ repeat: Infinity, duration: 22, ease: "linear" }}
           className="flex whitespace-nowrap gap-16 px-8 text-sm font-mono tracking-widest text-zinc-500 uppercase"
         >
-          <span>1,420 Active Threats Tracked</span>
+          <span>{stats.totalZones} Protected Zones Active</span>
           <span>•</span>
-          <span className="text-emerald-500">Sentinel-2 Sync: OK</span>
+          <span className="text-emerald-500">{stats.totalScans} Satellite Scans Completed</span>
           <span>•</span>
-          <span>Global Latency: 42ms</span>
+          <span className="text-red-400">{stats.activeThreats} Active Threats</span>
           <span>•</span>
-          <span className="text-cyan-500">Qwen2-VL Confidence: 94.2%</span>
+          <span className="text-cyan-500">Qwen2-VL AI Analysis — Online</span>
           <span>•</span>
-          <span>1,420 Active Threats Tracked</span>
+          <span>Sentinel-2 L2A — Synced</span>
           <span>•</span>
-          <span className="text-emerald-500">Sentinel-2 Sync: OK</span>
+          <span>{stats.totalZones} Protected Zones Active</span>
           <span>•</span>
-          <span>Global Latency: 42ms</span>
+          <span className="text-emerald-500">{stats.totalScans} Satellite Scans Completed</span>
           <span>•</span>
-          <span className="text-cyan-500">Qwen2-VL Confidence: 94.2%</span>
+          <span className="text-red-400">{stats.activeThreats} Active Threats</span>
+          <span>•</span>
+          <span className="text-cyan-500">Qwen2-VL AI Analysis — Online</span>
+          <span>•</span>
+          <span>Sentinel-2 L2A — Synced</span>
         </motion.div>
       </div>
 

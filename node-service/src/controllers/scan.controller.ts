@@ -10,9 +10,11 @@ import { broadcastScanUpdate } from '../utils/socket';
 
 // ── Date helpers ─────────────────────────────────────────────
 const formatDate = (d: Date): string => d.toISOString().split('T')[0];
-const getLastWeekDate = (): string => {
+const getDefaultDateFrom = (): string => {
   const d = new Date();
-  d.setDate(d.getDate() - 7);
+  // 45 din ka window — monsoon/cloud cover handle karne ke liye
+  // Sentinel-2 leastCC mosaicking best clear image choose karega
+  d.setDate(d.getDate() - 45);
   return formatDate(d);
 };
 
@@ -38,7 +40,7 @@ export const triggerScan = async (req: AuthRequest, res: Response): Promise<void
     }
 
     const jobId = uuidv4();
-    const from  = dateFrom || getLastWeekDate();
+    const from  = dateFrom || getDefaultDateFrom();
     const to    = dateTo   || formatDate(new Date());
 
     // Kafka job

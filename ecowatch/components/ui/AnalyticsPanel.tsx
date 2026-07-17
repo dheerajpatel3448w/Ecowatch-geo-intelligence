@@ -1,8 +1,10 @@
 "use client";
 
+import { useEffect, useState } from "react";
 import { PieChart, Pie, Cell, ResponsiveContainer, Tooltip, BarChart, Bar, XAxis, YAxis } from "recharts";
 import { AnalyticsResponse, AlertsOverTimeResponse } from "@/types/dashboard.types";
-import { ShieldAlert, SignalHigh, ServerCrash, TrendingUp } from "lucide-react";
+import { ShieldAlert, SignalHigh, ServerCrash, TrendingUp, Satellite, History, ArrowRight } from "lucide-react";
+import Link from "next/link";
 
 interface AnalyticsPanelProps {
   analytics: AnalyticsResponse | null;
@@ -12,7 +14,32 @@ interface AnalyticsPanelProps {
 const COLORS = ["#10b981", "#06b6d4", "#f59e0b", "#ef4444", "#8b5cf6"];
 
 export function AnalyticsPanel({ analytics, alertsOverTime }: AnalyticsPanelProps) {
-  
+  const [campaigns, setCampaigns] = useState<{ active: number; paused: number; completed: number; totalScansLeft: number }>(
+    { active: 0, paused: 0, completed: 0, totalScansLeft: 0 }
+  );
+
+  useEffect(() => {
+    const token = localStorage.getItem("token");
+    if (!token) return;
+    fetch("http://localhost:5000/api/campaigns", {
+      headers: { Authorization: `Bearer ${token}` },
+    })
+      .then(r => r.json())
+      .then(d => {
+        if (d.success && d.data) {
+          const list = d.data as any[];
+          const active    = list.filter(c => c.status === "active").length;
+          const paused    = list.filter(c => c.status === "paused").length;
+          const completed = list.filter(c => c.status === "completed").length;
+          const totalScansLeft = list
+            .filter(c => c.status === "active")
+            .reduce((sum: number, c: any) => sum + (c.scans?.filter((s: any) => s.status === "pending").length ?? 0), 0);
+          setCampaigns({ active, paused, completed, totalScansLeft });
+        }
+      })
+      .catch(() => {});
+  }, []);
+
   // Format data for Recharts Pie
   const chartData = analytics?.data.labels.map((label, index) => ({
     name: label.replace("_", " "),
@@ -46,6 +73,48 @@ export function AnalyticsPanel({ analytics, alertsOverTime }: AnalyticsPanelProp
             <span className="text-[10px] text-zinc-500 font-mono uppercase">Sentinel Sync</span>
             <span className="text-lg font-bold text-white">99.9%</span>
           </div>
+        </div>
+      </div>
+
+      {/* Active Campaigns Widget */}
+      <div className="bg-black/40 backdrop-blur-xl border border-white/10 rounded-2xl p-4 flex flex-col gap-3">
+        <div className="flex items-center justify-between">
+          <h3 className="text-[10px] font-mono tracking-widest uppercase text-emerald-500">Monitoring Campaigns</h3>
+          <Satellite size={13} className="text-zinc-500" />
+        </div>
+
+        <div className="grid grid-cols-3 gap-2">
+          <div className="flex flex-col items-center p-2 bg-emerald-500/5 border border-emerald-500/15 rounded-lg">
+            <span className="text-lg font-bold text-emerald-400">{campaigns.active}</span>
+            <span className="text-[9px] font-mono text-zinc-500 uppercase">Active</span>
+          </div>
+          <div className="flex flex-col items-center p-2 bg-yellow-500/5 border border-yellow-500/15 rounded-lg">
+            <span className="text-lg font-bold text-yellow-400">{campaigns.paused}</span>
+            <span className="text-[9px] font-mono text-zinc-500 uppercase">Paused</span>
+          </div>
+          <div className="flex flex-col items-center p-2 bg-blue-500/5 border border-blue-500/15 rounded-lg">
+            <span className="text-lg font-bold text-blue-400">{campaigns.completed}</span>
+            <span className="text-[9px] font-mono text-zinc-500 uppercase">Done</span>
+          </div>
+        </div>
+
+        {campaigns.active > 0 && (
+          <p className="text-[10px] text-zinc-500 font-mono">
+            {campaigns.totalScansLeft} scans pending across active campaigns
+          </p>
+        )}
+
+        <div className="flex gap-2">
+          <Link href="/monitoring" className="flex-1">
+            <button className="w-full flex items-center justify-center gap-1.5 py-1.5 rounded-lg text-[10px] font-mono uppercase tracking-wider text-emerald-400 border border-emerald-500/20 hover:bg-emerald-500/10 transition-all">
+              <Satellite size={10} /> Campaigns
+            </button>
+          </Link>
+          <Link href="/historical" className="flex-1">
+            <button className="w-full flex items-center justify-center gap-1.5 py-1.5 rounded-lg text-[10px] font-mono uppercase tracking-wider text-blue-400 border border-blue-500/20 hover:bg-blue-500/10 transition-all">
+              <History size={10} /> Historical
+            </button>
+          </Link>
         </div>
       </div>
 
