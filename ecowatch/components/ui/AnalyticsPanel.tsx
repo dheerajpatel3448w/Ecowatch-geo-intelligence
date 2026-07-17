@@ -3,24 +3,113 @@
 import { useEffect, useState } from "react";
 import { PieChart, Pie, Cell, ResponsiveContainer, Tooltip, BarChart, Bar, XAxis, YAxis } from "recharts";
 import { AnalyticsResponse, AlertsOverTimeResponse } from "@/types/dashboard.types";
-import { ShieldAlert, SignalHigh, ServerCrash, TrendingUp, Satellite, History, ArrowRight } from "lucide-react";
+import { ShieldAlert, SignalHigh, ServerCrash, TrendingUp, Satellite, History, TreePine, AlertTriangle, Cpu } from "lucide-react";
 import Link from "next/link";
 
 interface AnalyticsPanelProps {
   analytics: AnalyticsResponse | null;
   alertsOverTime: AlertsOverTimeResponse | null;
+  riskScores: any[];
 }
 
 const COLORS = ["#10b981", "#06b6d4", "#f59e0b", "#ef4444", "#8b5cf6"];
 
-export function AnalyticsPanel({ analytics, alertsOverTime }: AnalyticsPanelProps) {
+export function AnalyticsPanel({ analytics, alertsOverTime, riskScores }: AnalyticsPanelProps) {
   const [campaigns, setCampaigns] = useState<{ active: number; paused: number; completed: number; totalScansLeft: number }>(
     { active: 0, paused: 0, completed: 0, totalScansLeft: 0 }
   );
 
+  // Real telemetry state
+  const [apiLatency, setApiLatency]     = useState<number | null>(null);
+  const [mlOnline,   setMlOnline]       = useState<boolean | null>(null);
+  const [zoneCount,  setZoneCount]      = useState<number>(0);
+  const [todayAlerts, setTodayAlerts]   = useState<number>(0);
+  const [topRiskZone, setTopRiskZone]   = useState<{ name: string; score: number } | null>(null);
+
+  // New feature states
+  const [fieldReports,  setFieldReports]  = useState<{ pending: number; analyzed: number }>({ pending: 0, analyzed: 0 });
+  const [avgForestPct,  setAvgForestPct]  = useState<number | null>(null);
+  const [recentAnalyses, setRecentAnalyses] = useState<any[]>([]);
+  const [threatTypes,   setThreatTypes]   = useState<{ threat: string; count: number; color: string }[]>([]);
+
   useEffect(() => {
     const token = localStorage.getItem("token");
     if (!token) return;
+
+    // ── 1. Real API Latency ──────────────────────────────────────────────────
+    const measureLatency = async () => {
+      const t0 = performance.now();
+      try {
+        await fetch("http://localhost:5000/api/public/stats");
+        setApiLatency(Math.round(performance.now() - t0));
+      } catch { setApiLatency(null); }
+    };
+    measureLatency();
+    const latencyInterval = setInterval(measureLatency, 30_000);
+
+    // ── 2. ML Service Health ─────────────────────────────────────────────────
+    const checkML = async () => {
+      try {
+        const r = await fetch("http://localhost:8001/health", { signal: AbortSignal.timeout(3000) });
+        setMlOnline(r.ok);
+      } catch { setMlOnline(false); }
+    };
+    checkML();
+    const mlInterval = setInterval(checkML, 60_000);
+
+    // ── 3. Zone Count + Today's Alerts + Highest Risk Zone ──────────────────
+    const fetchExtra = async () => {
+      try {
+        const headers = { Authorization: `Bearer ${token}` };
+
+        const [zonesRes, riskRes] = await Promise.all([
+          fetch("http://localhost:5000/api/zones",             { headers }).then(r => r.json()),
+          fetch("http://localhost:5000/api/legal/risk-scores", { headers }).then(r => r.json()),
+        ]);
+
+        if (zonesRes.success) setZoneCount(zonesRes.data?.length ?? 0);
+
+        if (riskRes.success && riskRes.data?.length > 0) {
+          const sorted = [...riskRes.data].sort((a: any, b: any) => b.riskScore - a.riskScore);
+          setTopRiskZone({ name: sorted[0].zoneName, score: sorted[0].riskScore });
+          // F2: avg forest coverage
+          const withForest = riskRes.data.filter((z: any) => z.forestPct !== null && z.forestPct !== undefined);
+          if (withForest.length > 0) {
+            const avg = withForest.reduce((s: number, z: any) => s + z.forestPct, 0) / withForest.length;
+            setAvgForestPct(Math.round(avg * 10) / 10);
+          }
+        }
+
+        // Today's alerts count
+        const alertsRes = await fetch("http://localhost:5000/api/alerts", { headers }).then(r => r.json());
+        if (alertsRes.success) {
+          const today = new Date();
+          today.setHours(0, 0, 0, 0);
+          const count = (alertsRes.data ?? []).filter((a: any) => new Date(a.createdAt) >= today).length;
+          setTodayAlerts(count);
+        }
+
+        // F1: Field Reports
+        const frRes = await fetch("http://localhost:5000/api/field", { headers }).then(r => r.json());
+        if (frRes.success) {
+          const pending  = (frRes.data ?? []).filter((r: any) => r.status === 'pending').length;
+          const analyzed = (frRes.data ?? []).filter((r: any) => r.status === 'analyzed').length;
+          setFieldReports({ pending, analyzed });
+        }
+
+        // F3: Threat type breakdown
+        const threatRes = await fetch("http://localhost:5000/api/analytics/threat-types", { headers }).then(r => r.json());
+        if (threatRes.success) setThreatTypes(threatRes.data ?? []);
+
+        // F5: Recent historical analyses (last 3)
+        const histRes = await fetch("http://localhost:5000/api/historical?limit=3", { headers }).then(r => r.json());
+        if (histRes.success) setRecentAnalyses((histRes.data ?? []).slice(0, 3));
+
+      } catch { /* silent */ }
+    };
+    fetchExtra();
+
+    // ── 4. Campaign counts (existing) ────────────────────────────────────────
     fetch("http://localhost:5000/api/campaigns", {
       headers: { Authorization: `Bearer ${token}` },
     })
@@ -38,6 +127,11 @@ export function AnalyticsPanel({ analytics, alertsOverTime }: AnalyticsPanelProp
         }
       })
       .catch(() => {});
+
+    return () => {
+      clearInterval(latencyInterval);
+      clearInterval(mlInterval);
+    };
   }, []);
 
   // Format data for Recharts Pie
@@ -58,22 +152,54 @@ export function AnalyticsPanel({ analytics, alertsOverTime }: AnalyticsPanelProp
   return (
     <div className="w-[320px] h-full flex flex-col gap-4 overflow-y-auto scrollbar-none pb-4">
       
-      {/* System Status Module */}
+      {/* System Status Module — REAL DATA */}
       <div className="bg-black/40 backdrop-blur-xl border border-white/10 rounded-2xl p-5 flex flex-col gap-4">
         <h3 className="text-[10px] font-mono tracking-widest uppercase text-emerald-500">System Telemetry</h3>
         
         <div className="grid grid-cols-2 gap-3">
+          {/* Real API Latency */}
           <div className="bg-white/5 border border-white/5 rounded-lg p-3 flex flex-col gap-2">
-            <SignalHigh size={16} className="text-emerald-400" />
+            <SignalHigh size={16} className={apiLatency !== null && apiLatency < 100 ? "text-emerald-400" : "text-amber-400"} />
             <span className="text-[10px] text-zinc-500 font-mono uppercase">API Latency</span>
-            <span className="text-lg font-bold text-white">42ms</span>
+            <span className="text-lg font-bold text-white">
+              {apiLatency !== null ? `${apiLatency}ms` : <span className="text-xs animate-pulse text-zinc-500">Pinging...</span>}
+            </span>
           </div>
+
+          {/* Real ML Service Health */}
           <div className="bg-white/5 border border-white/5 rounded-lg p-3 flex flex-col gap-2">
-            <ServerCrash size={16} className="text-cyan-400" />
-            <span className="text-[10px] text-zinc-500 font-mono uppercase">Sentinel Sync</span>
-            <span className="text-lg font-bold text-white">99.9%</span>
+            <Cpu size={16} className={mlOnline === true ? "text-cyan-400" : mlOnline === false ? "text-red-400" : "text-zinc-500"} />
+            <span className="text-[10px] text-zinc-500 font-mono uppercase">ML Service</span>
+            <span className={`text-lg font-bold ${
+              mlOnline === true ? "text-cyan-400" : mlOnline === false ? "text-red-400" : "text-zinc-500"
+            }`}>
+              {mlOnline === true ? "Online" : mlOnline === false ? "Offline" : "Checking..."}
+            </span>
+          </div>
+
+          {/* Real Zone Count */}
+          <div className="bg-white/5 border border-white/5 rounded-lg p-3 flex flex-col gap-2">
+            <TreePine size={16} className="text-emerald-400" />
+            <span className="text-[10px] text-zinc-500 font-mono uppercase">Zones Active</span>
+            <span className="text-lg font-bold text-white">{zoneCount}</span>
+          </div>
+
+          {/* Today's Alerts */}
+          <div className="bg-white/5 border border-white/5 rounded-lg p-3 flex flex-col gap-2">
+            <AlertTriangle size={16} className={todayAlerts > 0 ? "text-red-400" : "text-zinc-500"} />
+            <span className="text-[10px] text-zinc-500 font-mono uppercase">Today's Alerts</span>
+            <span className={`text-lg font-bold ${todayAlerts > 0 ? "text-red-400" : "text-white"}`}>{todayAlerts}</span>
           </div>
         </div>
+
+        {/* Highest Risk Zone */}
+        {topRiskZone && (
+          <div className="bg-red-500/5 border border-red-500/20 rounded-lg p-3">
+            <span className="text-[9px] font-mono text-red-400/70 uppercase tracking-widest">⚠ Highest Risk Zone</span>
+            <p className="text-sm font-bold text-red-300 mt-1 truncate">{topRiskZone.name}</p>
+            <p className="text-[10px] font-mono text-zinc-500">Risk Score: {topRiskZone.score.toFixed(1)}</p>
+          </div>
+        )}
       </div>
 
       {/* Active Campaigns Widget */}
@@ -118,7 +244,80 @@ export function AnalyticsPanel({ analytics, alertsOverTime }: AnalyticsPanelProp
         </div>
       </div>
 
-      {/* Threat Distribution Chart */}
+      {/* F1: Ground Intelligence — Field Reports Widget */}
+      <div className="bg-black/40 backdrop-blur-xl border border-white/10 rounded-2xl p-4 flex flex-col gap-3">
+        <div className="flex items-center justify-between">
+          <h3 className="text-[10px] font-mono tracking-widest uppercase text-orange-500">Ground Intelligence</h3>
+          <ShieldAlert size={13} className="text-zinc-500" />
+        </div>
+        <div className="grid grid-cols-2 gap-2">
+          <div className="flex flex-col items-center p-2 bg-amber-500/5 border border-amber-500/20 rounded-lg">
+            <span className="text-xl font-bold text-amber-400">{fieldReports.pending}</span>
+            <span className="text-[9px] font-mono text-zinc-500 uppercase">Pending</span>
+          </div>
+          <div className="flex flex-col items-center p-2 bg-emerald-500/5 border border-emerald-500/20 rounded-lg">
+            <span className="text-xl font-bold text-emerald-400">{fieldReports.analyzed}</span>
+            <span className="text-[9px] font-mono text-zinc-500 uppercase">Analyzed</span>
+          </div>
+        </div>
+        <Link href="/field">
+          <button className="w-full flex items-center justify-center gap-1.5 py-1.5 rounded-lg text-[10px] font-mono uppercase tracking-wider text-orange-400 border border-orange-500/20 hover:bg-orange-500/10 transition-all">
+            View Field Ops →
+          </button>
+        </Link>
+      </div>
+
+      {/* F2: Global Forest Health Progress Bar */}
+      {avgForestPct !== null && (
+        <div className="bg-black/40 backdrop-blur-xl border border-white/10 rounded-2xl p-4 flex flex-col gap-3">
+          <h3 className="text-[10px] font-mono tracking-widest uppercase text-emerald-500">Global Forest Health</h3>
+          <div className="flex items-center justify-between mb-1">
+            <span className="text-[10px] font-mono text-zinc-400">Avg Coverage</span>
+            <span className={`text-sm font-bold font-mono ${
+              avgForestPct > 60 ? 'text-emerald-400' : avgForestPct > 35 ? 'text-amber-400' : 'text-red-400'
+            }`}>{avgForestPct}%</span>
+          </div>
+          <div className="w-full bg-white/5 rounded-full h-2 overflow-hidden">
+            <div
+              className={`h-full rounded-full transition-all duration-700 ${
+                avgForestPct > 60 ? 'bg-emerald-500' : avgForestPct > 35 ? 'bg-amber-500' : 'bg-red-500'
+              }`}
+              style={{ width: `${Math.min(avgForestPct, 100)}%` }}
+            />
+          </div>
+          <p className="text-[9px] font-mono text-zinc-600">Calculated across all monitored zones</p>
+        </div>
+      )}
+
+      {/* F3: Threat Type Breakdown Chart */}
+      {threatTypes.length > 0 && (
+        <div className="bg-black/40 backdrop-blur-xl border border-white/10 rounded-2xl p-5 flex flex-col gap-3">
+          <div className="flex items-center justify-between">
+            <h3 className="text-[10px] font-mono tracking-widest uppercase text-emerald-500">Threat Type Breakdown</h3>
+            <ShieldAlert size={14} className="text-zinc-500" />
+          </div>
+          <div className="flex flex-col gap-2">
+            {threatTypes.map((t) => {
+              const maxCount = Math.max(...threatTypes.map(x => x.count));
+              const pct = maxCount > 0 ? (t.count / maxCount) * 100 : 0;
+              return (
+                <div key={t.threat} className="flex items-center gap-2">
+                  <span className="text-[9px] font-mono text-zinc-400 w-28 truncate capitalize">{t.threat.replace(/_/g, ' ')}</span>
+                  <div className="flex-1 bg-white/5 rounded-full h-1.5 overflow-hidden">
+                    <div
+                      className="h-full rounded-full transition-all duration-700"
+                      style={{ width: `${pct}%`, backgroundColor: t.color }}
+                    />
+                  </div>
+                  <span className="text-[9px] font-mono text-zinc-500 w-5 text-right">{t.count}</span>
+                </div>
+              );
+            })}
+          </div>
+        </div>
+      )}
+
+      {/* Threat Distribution Pie Chart */}
       <div className="bg-black/40 backdrop-blur-xl border border-white/10 rounded-2xl p-5 flex-1 flex flex-col">
         <div className="flex items-center justify-between mb-4">
           <h3 className="text-[10px] font-mono tracking-widest uppercase text-emerald-500">Global Threat Matrix</h3>
@@ -170,7 +369,37 @@ export function AnalyticsPanel({ analytics, alertsOverTime }: AnalyticsPanelProp
         </div>
       </div>
 
-      {/* Threats Over Time Chart */}
+      {/* F5: Recent Historical Analyses */}
+      {recentAnalyses.length > 0 && (
+        <div className="bg-black/40 backdrop-blur-xl border border-white/10 rounded-2xl p-4 flex flex-col gap-3">
+          <div className="flex items-center justify-between">
+            <h3 className="text-[10px] font-mono tracking-widest uppercase text-blue-500">Recent Analyses</h3>
+            <History size={13} className="text-zinc-500" />
+          </div>
+          <div className="flex flex-col gap-2">
+            {recentAnalyses.map((a: any, i: number) => {
+              const sev = a.scans?.[a.scans.length - 1]?.severity ?? 'none';
+              const sevColor = sev === 'critical' ? 'text-red-400' : sev === 'high' ? 'text-amber-400' : sev === 'medium' ? 'text-yellow-400' : 'text-emerald-400';
+              return (
+                <div key={i} className="flex items-center justify-between py-1 border-b border-white/5 last:border-0">
+                  <span className="text-[10px] text-zinc-300 truncate max-w-[140px]">{a.zoneName ?? a.zoneId?.name ?? 'Zone'}</span>
+                  <span className={`text-[9px] font-mono uppercase font-bold ${sevColor}`}>{sev}</span>
+                  <span className="text-[9px] text-zinc-600 font-mono">
+                    {new Date(a.createdAt).toLocaleDateString('en-IN', { day: '2-digit', month: 'short' })}
+                  </span>
+                </div>
+              );
+            })}
+          </div>
+          <Link href="/historical">
+            <button className="w-full flex items-center justify-center gap-1.5 py-1.5 rounded-lg text-[10px] font-mono uppercase tracking-wider text-blue-400 border border-blue-500/20 hover:bg-blue-500/10 transition-all">
+              View All Historical →
+            </button>
+          </Link>
+        </div>
+      )}
+
+      {/* 6-Month Trend */}
       <div className="bg-black/40 backdrop-blur-xl border border-white/10 rounded-2xl p-5 flex flex-col min-h-[250px]">
         <div className="flex items-center justify-between mb-4">
           <h3 className="text-[10px] font-mono tracking-widest uppercase text-emerald-500">6-Month Trend</h3>

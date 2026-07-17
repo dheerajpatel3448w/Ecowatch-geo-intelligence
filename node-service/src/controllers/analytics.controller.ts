@@ -10,6 +10,7 @@ import { Response } from 'express';
 import Alert from '../models/Alert';
 import Zone from '../models/Zone';
 import Scan from '../models/Scan';
+import HistoricalAnalysis from '../models/HistoricalAnalysis';
 import { AuthRequest } from '../middleware/auth.middleware';
 
 // ── GET /api/analytics/threat-distribution ──────────────────────────────────
@@ -119,6 +120,62 @@ export const getAlertsOverTime = async (req: AuthRequest, res: Response): Promis
         labels: sortedLabels,
         datasets
       }
+    });
+  } catch (err) {
+    res.status(500).json({ success: false, error: String(err) });
+  }
+};
+
+// ── GET /api/analytics/threat-types ────────────────────────────────────────────
+export const getThreatTypeBreakdown = async (_req: AuthRequest, res: Response): Promise<void> => {
+  try {
+    const scanPipeline = [
+      { $match: { status: 'completed' } },
+      { $unwind: '$results.threats' },
+      { $match: { 'results.threats': { $ne: 'none' } } },
+      { $group: { _id: '$results.threats', count: { $sum: 1 } } },
+    ];
+
+    const histPipeline = [
+      { $unwind: '$scans' },
+      { $unwind: '$scans.threats' },
+      { $match: { 'scans.threats': { $ne: 'none' }, 'scans.status': 'done' } },
+      { $group: { _id: '$scans.threats', count: { $sum: 1 } } },
+    ];
+
+    const [scanStats, histStats] = await Promise.all([
+      Scan.aggregate(scanPipeline as any[]),
+      HistoricalAnalysis.aggregate(histPipeline as any[]),
+    ]);
+
+    const merged: Record<string, number> = {};
+    [...scanStats, ...histStats].forEach((s: any) => {
+      const key = (s._id as string).toLowerCase().replace(/\s+/g, '_');
+      merged[key] = (merged[key] ?? 0) + s.count;
+    });
+
+    const sorted = Object.entries(merged)
+      .sort(([, a], [, b]) => b - a)
+      .slice(0, 8);
+
+    const THREAT_COLORS: Record<string, string> = {
+      illegal_logging:    '#ef4444',
+      encroachment:       '#f97316',
+      deforestation:      '#dc2626',
+      mining:             '#a16207',
+      fire:               '#f59e0b',
+      water_pollution:    '#3b82f6',
+      industrialization:  '#8b5cf6',
+      agriculture:        '#22c55e',
+    };
+
+    res.json({
+      success: true,
+      data: sorted.map(([threat, count]) => ({
+        threat,
+        count,
+        color: THREAT_COLORS[threat] ?? '#6b7280',
+      })),
     });
   } catch (err) {
     res.status(500).json({ success: false, error: String(err) });

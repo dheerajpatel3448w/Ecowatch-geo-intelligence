@@ -3,7 +3,7 @@
 import { motion } from "framer-motion";
 import { Alert } from "@/types/dashboard.types";
 import { formatDistanceToNow } from "date-fns";
-import { Crosshair, MapPin, CheckCircle2, ShieldAlert } from "lucide-react";
+import { Crosshair, MapPin, CheckCircle2, ShieldAlert, Satellite, UserCheck } from "lucide-react";
 import { cn } from "@/lib/utils";
 
 interface AlertsFeedProps {
@@ -11,9 +11,10 @@ interface AlertsFeedProps {
   onFocus: (coords: [number, number]) => void;
   onResolve: (id: string) => void;
   onViewDetails: (alert: Alert) => void;
+  riskScores: any[];
 }
 
-export function AlertsFeed({ alerts, onFocus, onResolve, onViewDetails }: AlertsFeedProps) {
+export function AlertsFeed({ alerts, onFocus, onResolve, onViewDetails, riskScores }: AlertsFeedProps) {
   
   const getSeverityColor = (severity: string) => {
     switch (severity) {
@@ -63,10 +64,22 @@ export function AlertsFeed({ alerts, onFocus, onResolve, onViewDetails }: Alerts
                 }}
               >
                 <div className="flex justify-between items-start mb-2">
-                  <span className={cn("text-[10px] font-mono uppercase tracking-widest px-2 py-0.5 rounded border", getSeverityColor(alert.severity))}>
-                    {alert.severity}
-                  </span>
-                  <span className="text-[10px] text-zinc-500 font-mono">
+                  <div className="flex items-center gap-1.5 flex-wrap">
+                    <span className={cn("text-[10px] font-mono uppercase tracking-widest px-2 py-0.5 rounded border", getSeverityColor(alert.severity))}>
+                      {alert.severity}
+                    </span>
+                    {/* Source Badge */}
+                    {(alert as any).source === 'field_report' ? (
+                      <span className="text-[9px] font-mono uppercase tracking-widest px-1.5 py-0.5 rounded border bg-orange-500/10 border-orange-500/30 text-orange-400 flex items-center gap-1">
+                        <UserCheck size={9} /> Field Intel
+                      </span>
+                    ) : (
+                      <span className="text-[9px] font-mono uppercase tracking-widest px-1.5 py-0.5 rounded border bg-cyan-500/10 border-cyan-500/30 text-cyan-400 flex items-center gap-1">
+                        <Satellite size={9} /> Satellite
+                      </span>
+                    )}
+                  </div>
+                  <span className="text-[10px] text-zinc-500 font-mono shrink-0">
                     {formatDistanceToNow(new Date(alert.createdAt), { addSuffix: true })}
                   </span>
                 </div>
@@ -114,6 +127,37 @@ export function AlertsFeed({ alerts, onFocus, onResolve, onViewDetails }: Alerts
           )}
         </div>
       </div>
+
+      {/* F4: Top Risk Zones Table */}
+      {riskScores.length > 0 && (
+        <div className="bg-black/40 backdrop-blur-xl border border-white/10 rounded-2xl p-4 flex flex-col gap-3">
+          <h3 className="text-[10px] font-mono tracking-widest uppercase text-red-400">Top Risk Zones</h3>
+          <div className="flex flex-col gap-1.5">
+            {[...riskScores]
+              .sort((a, b) => b.riskScore - a.riskScore)
+              .slice(0, 5)
+              .map((zone: any, i: number) => {
+                const score = zone.riskScore ?? 0;
+                const color = score >= 75 ? 'text-red-400' : score >= 50 ? 'text-orange-400' : score >= 25 ? 'text-amber-400' : 'text-emerald-400';
+                const dot   = score >= 75 ? 'bg-red-500'  : score >= 50 ? 'bg-orange-500'  : score >= 25 ? 'bg-amber-500'  : 'bg-emerald-500';
+                return (
+                  <div key={i} className="flex items-center gap-2 py-1 border-b border-white/5 last:border-0">
+                    <span className={`w-1.5 h-1.5 rounded-full shrink-0 ${dot}`} />
+                    <span className="text-[10px] text-zinc-300 truncate flex-1">{zone.zoneName}</span>
+                    <span className={`text-[10px] font-mono font-bold ${color}`}>{score.toFixed(1)}</span>
+                    <a
+                      href="/legal"
+                      className="text-[9px] font-mono text-cyan-500 hover:text-cyan-300 border border-cyan-500/20 px-1.5 py-0.5 rounded hover:bg-cyan-500/10 transition-colors"
+                    >
+                      FIR
+                    </a>
+                  </div>
+                );
+              })
+            }
+          </div>
+        </div>
+      )}
     </div>
   );
 }

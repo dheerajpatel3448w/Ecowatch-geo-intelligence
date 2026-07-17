@@ -16,15 +16,17 @@ import { ShieldAlert, RefreshCw } from "lucide-react";
 const InteractiveMap = dynamic(() => import("@/components/ui/Map"), { ssr: false });
 
 export default function DashboardPage() {
-  const [alerts, setAlerts] = useState<Alert[]>([]);
-  const [analytics, setAnalytics] = useState<AnalyticsResponse | null>(null);
+  const [alerts, setAlerts]             = useState<Alert[]>([]);
+  const [analytics, setAnalytics]       = useState<AnalyticsResponse | null>(null);
   const [alertsOverTime, setAlertsOverTime] = useState<AlertsOverTimeResponse | null>(null);
-  const [focusCoords, setFocusCoords] = useState<[number, number] | null>(null);
+  const [focusCoords, setFocusCoords]   = useState<[number, number] | null>(null);
   const [selectedAlert, setSelectedAlert] = useState<Alert | null>(null);
-  const [isConnected, setIsConnected] = useState(false);
+  const [isConnected, setIsConnected]   = useState(false);
+  const [riskScores, setRiskScores]     = useState<any[]>([]);
 
   // Fetch initial data
   const fetchData = async () => {
+    const token = localStorage.getItem('token');
     const [alertsRes, analyticsRes, overTimeRes] = await Promise.all([
       dashboardService.getAlerts(),
       dashboardService.getThreatDistribution(),
@@ -34,6 +36,16 @@ export default function DashboardPage() {
     if (alertsRes.success) setAlerts(alertsRes.data);
     if (analyticsRes.success) setAnalytics(analyticsRes);
     if (overTimeRes.success) setAlertsOverTime(overTimeRes);
+
+    // Fetch risk scores for Zone Risk Table
+    if (token) {
+      try {
+        const riskRes = await fetch('http://localhost:5000/api/legal/risk-scores', {
+          headers: { Authorization: `Bearer ${token}` }
+        }).then(r => r.json());
+        if (riskRes.success) setRiskScores(riskRes.data ?? []);
+      } catch { /* silent */ }
+    }
   };
 
   useEffect(() => {
@@ -141,7 +153,7 @@ export default function DashboardPage() {
           transition={{ type: "spring", stiffness: 100, damping: 20 }}
           className="h-full z-20"
         >
-          <AnalyticsPanel analytics={analytics} alertsOverTime={alertsOverTime} />
+          <AnalyticsPanel analytics={analytics} alertsOverTime={alertsOverTime} riskScores={riskScores} />
         </motion.div>
 
         {/* Center Live Map (Background) */}
@@ -164,6 +176,7 @@ export default function DashboardPage() {
             onFocus={setFocusCoords} 
             onResolve={handleResolveAlert} 
             onViewDetails={setSelectedAlert}
+            riskScores={riskScores}
           />
         </motion.div>
 
