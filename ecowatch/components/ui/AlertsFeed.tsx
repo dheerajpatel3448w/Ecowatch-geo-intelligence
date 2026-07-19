@@ -3,7 +3,9 @@
 import { motion } from "framer-motion";
 import { Alert } from "@/types/dashboard.types";
 import { formatDistanceToNow } from "date-fns";
-import { Crosshair, MapPin, CheckCircle2, ShieldAlert, Satellite, UserCheck } from "lucide-react";
+import {
+  Crosshair, MapPin, CheckCircle2, ShieldAlert, Satellite, UserCheck, AlertTriangle, Zap
+} from "lucide-react";
 import { cn } from "@/lib/utils";
 
 interface AlertsFeedProps {
@@ -14,38 +16,55 @@ interface AlertsFeedProps {
   riskScores: any[];
 }
 
-export function AlertsFeed({ alerts, onFocus, onResolve, onViewDetails, riskScores }: AlertsFeedProps) {
-  
-  const getSeverityColor = (severity: string) => {
-    switch (severity) {
-      case "CRITICAL": return "text-red-500 bg-red-500/10 border-red-500/30";
-      case "HIGH": return "text-amber-500 bg-amber-500/10 border-amber-500/30";
-      case "MEDIUM": return "text-yellow-500 bg-yellow-500/10 border-yellow-500/30";
-      default: return "text-emerald-500 bg-emerald-500/10 border-emerald-500/30";
-    }
+function SeverityBadge({ severity }: { severity: string }) {
+  const config: Record<string, { color: string; bg: string; border: string; dot: string }> = {
+    CRITICAL: { color: "text-red-400",    bg: "bg-red-500/10",    border: "border-red-500/25",    dot: "bg-red-400"    },
+    HIGH:     { color: "text-amber-400",  bg: "bg-amber-500/10",  border: "border-amber-500/25",  dot: "bg-amber-400"  },
+    MEDIUM:   { color: "text-yellow-400", bg: "bg-yellow-500/10", border: "border-yellow-500/25", dot: "bg-yellow-400" },
+    LOW:      { color: "text-emerald-400",bg: "bg-emerald-500/10",border: "border-emerald-500/25",dot: "bg-emerald-400"},
   };
+  const c = config[severity] ?? config.LOW;
+  return (
+    <span className={cn("inline-flex items-center gap-1.5 px-2 py-0.5 rounded-full text-[9px] font-bold uppercase tracking-widest border", c.color, c.bg, c.border)}>
+      <span className={cn("w-1 h-1 rounded-full", c.dot)} />
+      {severity}
+    </span>
+  );
+}
 
-  const activeAlerts = alerts.filter(a => a.status !== "RESOLVED" && a.status !== "FALSE_ALARM");
+export function AlertsFeed({ alerts, onFocus, onResolve, onViewDetails, riskScores }: AlertsFeedProps) {
+  const activeAlerts = alerts.filter((a) => a.status !== "RESOLVED" && a.status !== "FALSE_ALARM");
 
   return (
-    <div className="w-[360px] h-full flex flex-col gap-4">
-      <div className="bg-black/40 backdrop-blur-xl border border-white/10 rounded-2xl p-5 flex flex-col h-full overflow-hidden">
-        
-        <div className="flex items-center justify-between mb-4 pb-4 border-b border-white/5">
+    <div className="w-[360px] h-full flex flex-col gap-3">
+
+      {/* Live Alert Feed */}
+      <div className="glass rounded-2xl p-5 flex flex-col flex-1 overflow-hidden">
+
+        {/* Header */}
+        <div className="flex items-center justify-between mb-4 pb-3 border-b border-white/5">
           <div className="flex items-center gap-2">
-            <span className="relative flex h-2 w-2">
-              <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-red-400 opacity-75"></span>
-              <span className="relative inline-flex rounded-full h-2 w-2 bg-red-500"></span>
-            </span>
-            <h3 className="text-[10px] font-mono tracking-widest uppercase text-white">Live Alert Feed</h3>
+            <div className="w-6 h-6 rounded-lg bg-red-500/15 border border-red-500/20 flex items-center justify-center">
+              <AlertTriangle size={11} className="text-red-400" />
+            </div>
+            <h3 className="text-[11px] font-semibold uppercase tracking-wider text-white">
+              Live Alert Feed
+            </h3>
           </div>
-          <span className="text-xs font-mono text-zinc-500">{activeAlerts.length} Active</span>
+          <div className="flex items-center gap-1.5 px-2 py-0.5 rounded-full glass text-[10px] font-semibold text-zinc-400">
+            <span className="w-1.5 h-1.5 rounded-full bg-red-400 animate-pulse" />
+            {activeAlerts.length} Active
+          </div>
         </div>
 
-        <div className="flex-1 overflow-y-auto pr-2 space-y-3 scrollbar-thin scrollbar-thumb-white/10 scrollbar-track-transparent">
+        {/* Alert List */}
+        <div className="flex-1 overflow-y-auto space-y-2.5 pr-1">
           {activeAlerts.length === 0 ? (
-            <div className="text-center py-10 text-zinc-500 text-sm font-mono">
-              No active threats detected.
+            <div className="flex flex-col items-center justify-center h-32 gap-3">
+              <div className="w-10 h-10 rounded-2xl glass-emerald flex items-center justify-center">
+                <CheckCircle2 size={18} className="text-emerald-400" />
+              </div>
+              <p className="text-xs text-zinc-500 text-center">No active threats detected.</p>
             </div>
           ) : (
             activeAlerts.map((alert, idx) => (
@@ -53,71 +72,71 @@ export function AlertsFeed({ alerts, onFocus, onResolve, onViewDetails, riskScor
                 key={alert._id}
                 initial={{ opacity: 0, x: 20 }}
                 animate={{ opacity: 1, x: 0 }}
-                transition={{ delay: idx * 0.05 }}
-                className="group relative bg-white/5 hover:bg-white/10 border border-white/5 hover:border-white/20 rounded-xl p-4 transition-all cursor-pointer"
+                transition={{ delay: idx * 0.04 }}
+                className="group relative glass rounded-xl p-3.5 cursor-pointer hover:glass-strong transition-all duration-200"
                 onClick={() => {
-                  if (alert.hotspot) {
-                    onFocus([alert.hotspot.lat, alert.hotspot.lng]);
-                  } else {
-                    onFocus([20.5937, 78.9629]);
-                  }
+                  if (alert.hotspot) onFocus([alert.hotspot.lat, alert.hotspot.lng]);
+                  else onFocus([20.5937, 78.9629]);
                 }}
               >
-                <div className="flex justify-between items-start mb-2">
-                  <div className="flex items-center gap-1.5 flex-wrap">
-                    <span className={cn("text-[10px] font-mono uppercase tracking-widest px-2 py-0.5 rounded border", getSeverityColor(alert.severity))}>
-                      {alert.severity}
-                    </span>
-                    {/* Source Badge */}
-                    {(alert as any).source === 'field_report' ? (
-                      <span className="text-[9px] font-mono uppercase tracking-widest px-1.5 py-0.5 rounded border bg-orange-500/10 border-orange-500/30 text-orange-400 flex items-center gap-1">
-                        <UserCheck size={9} /> Field Intel
+                {/* Severity left bar */}
+                <div className={cn(
+                  "absolute left-0 top-3 bottom-3 w-0.5 rounded-r-full",
+                  alert.severity === "CRITICAL" ? "bg-red-500" :
+                  alert.severity === "HIGH" ? "bg-amber-500" :
+                  alert.severity === "MEDIUM" ? "bg-yellow-500" : "bg-emerald-500"
+                )} />
+
+                <div className="flex items-center justify-between mb-2 pl-2">
+                  <div className="flex items-center gap-1.5">
+                    <SeverityBadge severity={alert.severity} />
+                    {(alert as any).source === "field_report" ? (
+                      <span className="inline-flex items-center gap-1 px-1.5 py-0.5 rounded-full bg-orange-500/10 border border-orange-500/20 text-[9px] font-semibold text-orange-400">
+                        <UserCheck size={8} /> Field
                       </span>
                     ) : (
-                      <span className="text-[9px] font-mono uppercase tracking-widest px-1.5 py-0.5 rounded border bg-cyan-500/10 border-cyan-500/30 text-cyan-400 flex items-center gap-1">
-                        <Satellite size={9} /> Satellite
+                      <span className="inline-flex items-center gap-1 px-1.5 py-0.5 rounded-full bg-cyan-500/10 border border-cyan-500/20 text-[9px] font-semibold text-cyan-400">
+                        <Satellite size={8} /> Orbital
                       </span>
                     )}
                   </div>
-                  <span className="text-[10px] text-zinc-500 font-mono shrink-0">
+                  <span className="text-[9px] text-zinc-600 font-mono shrink-0">
                     {formatDistanceToNow(new Date(alert.createdAt), { addSuffix: true })}
                   </span>
                 </div>
-                
-                <p className="text-sm text-zinc-300 font-medium mb-3 leading-snug line-clamp-2">
+
+                <p className="text-xs text-zinc-300 leading-snug line-clamp-2 pl-2 mb-2">
                   {alert.message}
                 </p>
 
                 {alert.hotspot && (
-                  <div className="flex items-center gap-1 text-[10px] text-zinc-500 font-mono mb-4">
-                    <MapPin size={12} />
+                  <div className="flex items-center gap-1.5 pl-2 text-[9px] font-mono text-zinc-600 mb-3">
+                    <MapPin size={10} className="text-zinc-500" />
                     {alert.hotspot.lat.toFixed(4)}, {alert.hotspot.lng.toFixed(4)}
                   </div>
                 )}
 
-                <div className="flex items-center gap-2 opacity-0 group-hover:opacity-100 transition-opacity">
-                  <button 
+                {/* Action row — appears on hover */}
+                <div className="flex items-center gap-1.5 pl-2 opacity-0 group-hover:opacity-100 transition-opacity">
+                  <button
                     onClick={(e) => { e.stopPropagation(); onResolve(alert._id); }}
-                    className="flex-1 flex items-center justify-center gap-2 py-1.5 bg-emerald-500/10 hover:bg-emerald-500/20 text-emerald-400 border border-emerald-500/30 rounded text-[10px] font-mono uppercase tracking-widest transition-colors"
+                    className="flex-1 flex items-center justify-center gap-1 py-1.5 rounded-lg bg-emerald-500/10 hover:bg-emerald-500/20 border border-emerald-500/20 text-emerald-400 text-[9px] font-semibold uppercase tracking-wider transition-colors"
                   >
-                    <CheckCircle2 size={12} /> Resolve
+                    <CheckCircle2 size={10} /> Resolve
                   </button>
-                  <button 
-                    onClick={(e) => { 
-                      e.stopPropagation(); 
-                      if (alert.hotspot) {
-                        onFocus([alert.hotspot.lat, alert.hotspot.lng]); 
-                      } else {
-                        onFocus([20.5937, 78.9629]); 
-                      }
+                  <button
+                    onClick={(e) => {
+                      e.stopPropagation();
+                      if (alert.hotspot) onFocus([alert.hotspot.lat, alert.hotspot.lng]);
+                      else onFocus([20.5937, 78.9629]);
                     }}
-                    className="flex-1 flex items-center justify-center gap-1 py-1.5 bg-cyan-500/10 hover:bg-cyan-500/20 text-cyan-400 border border-cyan-500/30 rounded text-[10px] font-mono uppercase tracking-widest transition-colors"
+                    className="flex-1 flex items-center justify-center gap-1 py-1.5 rounded-lg bg-cyan-500/10 hover:bg-cyan-500/20 border border-cyan-500/20 text-cyan-400 text-[9px] font-semibold uppercase tracking-wider transition-colors"
                   >
-                    <Crosshair size={12} /> Focus
+                    <Crosshair size={10} /> Focus
                   </button>
-                  <button 
+                  <button
                     onClick={(e) => { e.stopPropagation(); onViewDetails(alert); }}
-                    className="flex-1 flex items-center justify-center gap-1 py-1.5 bg-white/5 hover:bg-white/10 text-white border border-white/10 rounded text-[10px] font-mono uppercase tracking-widest transition-colors"
+                    className="flex-1 flex items-center justify-center gap-1 py-1.5 rounded-lg glass hover:glass-strong text-zinc-300 text-[9px] font-semibold uppercase tracking-wider transition-all"
                   >
                     Details
                   </button>
@@ -128,33 +147,50 @@ export function AlertsFeed({ alerts, onFocus, onResolve, onViewDetails, riskScor
         </div>
       </div>
 
-      {/* F4: Top Risk Zones Table */}
+      {/* Top Risk Zones */}
       {riskScores.length > 0 && (
-        <div className="bg-black/40 backdrop-blur-xl border border-white/10 rounded-2xl p-4 flex flex-col gap-3">
-          <h3 className="text-[10px] font-mono tracking-widest uppercase text-red-400">Top Risk Zones</h3>
-          <div className="flex flex-col gap-1.5">
+        <div className="glass rounded-2xl p-4 flex flex-col gap-3 shrink-0">
+          <div className="flex items-center gap-2">
+            <div className="w-5 h-5 rounded-lg bg-red-500/15 border border-red-500/20 flex items-center justify-center">
+              <Zap size={10} className="text-red-400" />
+            </div>
+            <h3 className="text-[10px] font-semibold uppercase tracking-wider text-red-400">
+              Top Risk Zones
+            </h3>
+          </div>
+          <div className="flex flex-col gap-1">
             {[...riskScores]
               .sort((a, b) => b.riskScore - a.riskScore)
               .slice(0, 5)
               .map((zone: any, i: number) => {
                 const score = zone.riskScore ?? 0;
-                const color = score >= 75 ? 'text-red-400' : score >= 50 ? 'text-orange-400' : score >= 25 ? 'text-amber-400' : 'text-emerald-400';
-                const dot   = score >= 75 ? 'bg-red-500'  : score >= 50 ? 'bg-orange-500'  : score >= 25 ? 'bg-amber-500'  : 'bg-emerald-500';
+                const color = score >= 75 ? "text-red-400" : score >= 50 ? "text-amber-400" : score >= 25 ? "text-yellow-400" : "text-emerald-400";
+                const bar = score >= 75 ? "bg-red-500" : score >= 50 ? "bg-amber-500" : score >= 25 ? "bg-yellow-500" : "bg-emerald-500";
                 return (
-                  <div key={i} className="flex items-center gap-2 py-1 border-b border-white/5 last:border-0">
-                    <span className={`w-1.5 h-1.5 rounded-full shrink-0 ${dot}`} />
-                    <span className="text-[10px] text-zinc-300 truncate flex-1">{zone.zoneName}</span>
-                    <span className={`text-[10px] font-mono font-bold ${color}`}>{score.toFixed(1)}</span>
+                  <div key={i} className="flex items-center gap-2 py-1.5 border-b border-white/5 last:border-0">
+                    <span className={cn("text-[10px] text-zinc-600 tabular-nums w-4 shrink-0", color)}>
+                      {i + 1}.
+                    </span>
+                    <div className="flex-1 min-w-0">
+                      <div className="flex items-center justify-between mb-0.5">
+                        <span className="text-[10px] text-zinc-300 truncate">{zone.zoneName}</span>
+                        <span className={cn("text-[10px] font-bold tabular-nums shrink-0 ml-2", color)}>
+                          {score.toFixed(1)}
+                        </span>
+                      </div>
+                      <div className="w-full h-0.5 bg-white/5 rounded-full">
+                        <div className={cn("h-full rounded-full transition-all", bar)} style={{ width: `${score}%` }} />
+                      </div>
+                    </div>
                     <a
                       href="/legal"
-                      className="text-[9px] font-mono text-cyan-500 hover:text-cyan-300 border border-cyan-500/20 px-1.5 py-0.5 rounded hover:bg-cyan-500/10 transition-colors"
+                      className="shrink-0 text-[9px] font-semibold text-cyan-500 hover:text-cyan-300 border border-cyan-500/20 px-1.5 py-0.5 rounded-lg hover:bg-cyan-500/10 transition-all"
                     >
                       FIR
                     </a>
                   </div>
                 );
-              })
-            }
+              })}
           </div>
         </div>
       )}

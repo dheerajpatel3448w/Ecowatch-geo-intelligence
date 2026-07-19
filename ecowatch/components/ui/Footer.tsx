@@ -1,85 +1,110 @@
 "use client";
 
 import { motion } from "framer-motion";
-import { Activity, Code, Globe, Shield, Hexagon } from "lucide-react";
+import { Globe, GitBranch, ExternalLink, Leaf } from "lucide-react";
 import Link from "next/link";
 import { usePathname } from "next/navigation";
 
+const FULL_SCREEN_ROUTES = ["/auth", "/dashboard", "/zones"];
+
+const footerLinks = {
+  Platform: [
+    { label: "Dashboard", href: "/dashboard" },
+    { label: "Monitoring", href: "/monitoring" },
+    { label: "Mission Control", href: "/zones" },
+    { label: "Historical", href: "/historical" },
+  ],
+  Intelligence: [
+    { label: "Analytics", href: "/dashboard" },
+    { label: "Legal & FIR", href: "/legal" },
+    { label: "Data Export", href: "/export" },
+    { label: "Public Portal", href: "/public" },
+  ],
+};
+
 export function Footer() {
   const pathname = usePathname();
-
-  // Hide footer on full-screen pages like auth, dashboard, and zones
-  if (pathname === "/auth" || pathname === "/dashboard" || pathname === "/zones") {
-    return null;
-  }
+  if (FULL_SCREEN_ROUTES.some((r) => pathname === r)) return null;
 
   return (
-    <footer className="w-full relative z-20 border-t border-white/5 bg-black/80 backdrop-blur-xl mt-20">
-      <div className="absolute top-0 left-1/2 -translate-x-1/2 w-1/2 h-[1px] bg-gradient-to-r from-transparent via-emerald-500/50 to-transparent" />
-      
-      <div className="max-w-7xl mx-auto px-6 py-12">
-        <div className="grid grid-cols-1 md:grid-cols-4 gap-12 md:gap-8">
-          
-          {/* Brand Column */}
-          <div className="col-span-1 md:col-span-2 flex flex-col gap-4">
-            <div className="flex items-center gap-2">
-              <Hexagon className="text-emerald-500" size={24} />
-              <span className="text-xl font-bold tracking-widest text-white">ECOWATCH</span>
+    <footer className="relative z-20 mt-24 border-t border-white/5">
+      {/* Top shimmer border */}
+      <div className="absolute top-0 inset-x-0 h-px bg-gradient-to-r from-transparent via-emerald-500/40 to-transparent" />
+
+      <div className="glass-strong">
+        <div className="max-w-6xl mx-auto px-6 py-14">
+          <div className="grid grid-cols-1 md:grid-cols-3 gap-12 lg:gap-20">
+
+            {/* Brand */}
+            <div className="md:col-span-1 flex flex-col gap-5">
+              <div className="flex items-center gap-2.5">
+                <div className="w-8 h-8 rounded-xl glass-emerald flex items-center justify-center">
+                  <Leaf size={15} className="text-emerald-400" />
+                </div>
+                <span className="text-[15px] font-bold tracking-tight text-white">
+                  Eco<span className="text-emerald-400">Watch</span>
+                </span>
+              </div>
+
+              <p className="text-sm text-zinc-500 leading-relaxed max-w-xs">
+                Global Environmental Intelligence Network. Powered by Qwen2-VL AI and orbital satellite telemetry.
+              </p>
+
+              {/* Live status pill */}
+              <div className="inline-flex items-center gap-2 px-3 py-1.5 rounded-full glass-emerald w-max">
+                <span className="w-1.5 h-1.5 rounded-full bg-emerald-400 animate-pulse" />
+                <span className="text-[10px] font-semibold uppercase tracking-widest text-emerald-400">
+                  System Online
+                </span>
+              </div>
+
+              {/* Social icons */}
+              <div className="flex items-center gap-3 mt-1">
+                {[Globe, GitBranch, ExternalLink].map((Icon, i) => (
+                  <motion.a
+                    key={i}
+                    href="#"
+                    whileHover={{ scale: 1.15, y: -1 }}
+                    className="w-8 h-8 rounded-full glass flex items-center justify-center text-zinc-500 hover:text-emerald-400 transition-colors"
+                  >
+                    <Icon size={14} />
+                  </motion.a>
+                ))}
+              </div>
             </div>
-            <p className="text-sm text-zinc-500 max-w-sm">
-              Global Environmental Intelligence Network. Utilizing advanced Qwen2-VL architectures and orbital satellite telemetry to predict and prevent ecological collapse.
+
+            {/* Links */}
+            {Object.entries(footerLinks).map(([section, items]) => (
+              <div key={section} className="flex flex-col gap-4">
+                <h3 className="text-[11px] font-semibold uppercase tracking-[0.15em] text-zinc-400">
+                  {section}
+                </h3>
+                <ul className="flex flex-col gap-2.5">
+                  {items.map((item) => (
+                    <li key={item.label}>
+                      <Link
+                        href={item.href}
+                        className="text-sm text-zinc-500 hover:text-white transition-colors duration-200 hover:translate-x-0.5 inline-block"
+                      >
+                        {item.label}
+                      </Link>
+                    </li>
+                  ))}
+                </ul>
+              </div>
+            ))}
+          </div>
+
+          {/* Bottom bar */}
+          <div className="mt-12 pt-6 border-t border-white/5 flex flex-col sm:flex-row items-center justify-between gap-3">
+            <p className="text-[11px] text-zinc-600">
+              © {new Date().getFullYear()} EcoWatch Global Intelligence. All rights reserved.
             </p>
-            <div className="flex items-center gap-3 mt-2">
-              <span className="relative flex h-3 w-3">
-                <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-emerald-400 opacity-75"></span>
-                <span className="relative inline-flex rounded-full h-3 w-3 bg-emerald-500"></span>
-              </span>
-              <span className="text-xs font-mono text-emerald-500 tracking-widest uppercase">System Online • Core Stable</span>
+            <div className="flex items-center gap-4 text-[11px] text-zinc-600">
+              <a href="#" className="hover:text-zinc-400 transition-colors">Privacy</a>
+              <a href="#" className="hover:text-zinc-400 transition-colors">Terms</a>
+              <a href="#" className="hover:text-zinc-400 transition-colors">Security</a>
             </div>
-          </div>
-
-          {/* Links Column 1 */}
-          <div className="flex flex-col gap-4">
-            <h3 className="text-sm font-semibold text-white tracking-wider uppercase">Directives</h3>
-            <ul className="flex flex-col gap-2 text-sm text-zinc-400">
-              <li><Link href="#" className="hover:text-emerald-400 transition-colors">Mission Overview</Link></li>
-              <li><Link href="#" className="hover:text-emerald-400 transition-colors">Global Map</Link></li>
-              <li><Link href="#" className="hover:text-emerald-400 transition-colors">Threat Models</Link></li>
-              <li><Link href="#" className="hover:text-emerald-400 transition-colors">Analytics</Link></li>
-            </ul>
-          </div>
-
-          {/* Links Column 2 */}
-          <div className="flex flex-col gap-4">
-            <h3 className="text-sm font-semibold text-white tracking-wider uppercase">Network</h3>
-            <ul className="flex flex-col gap-2 text-sm text-zinc-400">
-              <li>
-                <a href="#" className="hover:text-emerald-400 transition-colors flex items-center gap-2">
-                  <Code size={16} /> Data Repository
-                </a>
-              </li>
-              <li>
-                <a href="#" className="hover:text-emerald-400 transition-colors flex items-center gap-2">
-                  <Activity size={16} /> API Status
-                </a>
-              </li>
-              <li>
-                <a href="#" className="hover:text-emerald-400 transition-colors flex items-center gap-2">
-                  <Shield size={16} /> Security Clearance
-                </a>
-              </li>
-            </ul>
-          </div>
-
-        </div>
-
-        <div className="mt-16 pt-8 border-t border-white/5 flex flex-col md:flex-row items-center justify-between gap-4">
-          <p className="text-xs text-zinc-600 font-mono">
-            © {new Date().getFullYear()} EcoWatch Global Intelligence. Classified.
-          </p>
-          <div className="flex gap-4">
-            <a href="#" className="text-zinc-600 hover:text-emerald-500 transition-colors"><Globe size={18} /></a>
-            <a href="#" className="text-zinc-600 hover:text-emerald-500 transition-colors"><Code size={18} /></a>
           </div>
         </div>
       </div>
